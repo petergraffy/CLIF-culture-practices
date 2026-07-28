@@ -68,6 +68,22 @@ TOP_N_CULTURE_TYPES=8 PLOT_END_DATE=2024-12-31 Rscript code/02_plot_culture_time
 
 This writes monthly summaries and PNG figures under `output/time_series/`.
 
+## Positive Organism Plots
+
+After cohort identification, run:
+
+```sh
+ICU_CULTURE_ROWS_PATH=output/cohort/icu_culture_rows_UCMC_YYYYMMDD_HHMMSS.csv Rscript code/04_plot_positive_organisms.R
+```
+
+Optional controls:
+
+```sh
+TOP_N_CULTURE_TYPES=8 TOP_N_ORGANISMS_PER_TYPE=10 PLOT_END_DATE=2024-12-31 Rscript code/04_plot_positive_organisms.R
+```
+
+This writes positive organism summaries and PNG figures under `output/organisms/`.
+
 ## Data Governance
 
 Do not commit PHI, row-level CLIF extracts, credentials, or institution-specific restricted files. Use local paths, environment variables, or ignored private directories for sensitive inputs.
