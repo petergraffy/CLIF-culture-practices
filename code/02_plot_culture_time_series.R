@@ -156,6 +156,21 @@ culture_type_palette <- c(
 )
 available_palette <- culture_type_palette[names(culture_type_palette) %in% levels(monthly_by_type$culture_type)]
 
+monthly_by_type_stacked <- monthly_by_type %>%
+  mutate(culture_type = fct_collapse(culture_type, Other = c("Other", "Other unspecified"))) %>%
+  group_by(culture_month, culture_type) %>%
+  summarise(
+    n_events = sum(n_events),
+    n_positive_events = sum(n_positive_events),
+    positive_event_rate = if_else(n_events > 0, n_positive_events / n_events, NA_real_),
+    n_hospitalizations = sum(n_hospitalizations),
+    n_patients = sum(n_patients),
+    .groups = "drop"
+  ) %>%
+  mutate(culture_type = fct_relevel(factor(culture_type), "Other", after = Inf))
+
+stacked_palette <- culture_type_palette[names(culture_type_palette) %in% levels(monthly_by_type_stacked$culture_type)]
+
 p_overall_volume <- ggplot(monthly_overall, aes(culture_month, n_events)) +
   geom_col(fill = "#2f6f73", width = month_bar_width) +
   scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
@@ -192,14 +207,14 @@ p_type_volume <- ggplot(monthly_by_type, aes(culture_month, n_events, color = cu
   ) +
   plot_theme
 
-p_type_stacked_volume <- ggplot(monthly_by_type, aes(culture_month, n_events, fill = culture_type)) +
+p_type_stacked_volume <- ggplot(monthly_by_type_stacked, aes(culture_month, n_events, fill = culture_type)) +
   geom_col(width = month_bar_width, color = "white", linewidth = 0.08) +
-  scale_fill_manual(values = available_palette) +
+  scale_fill_manual(values = stacked_palette) +
   scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
   scale_y_continuous(labels = comma) +
   labs(
     title = "Monthly ICU Culture Events by Culture Type",
-    subtitle = "Stacked monthly event counts; less common culture types grouped as Other",
+    subtitle = "Stacked monthly event counts; Other includes Other unspecified and less common culture types",
     x = NULL,
     y = "Culture events",
     fill = NULL
