@@ -1,0 +1,6 @@
+{
+    "site_name": "Your_Site_Name",
+    "repo": "/path/to/CLIF-culture-practices",
+    "tables_path": "/path/to/clif/tables",
+    "file_type": "parquet"
+}

@@ -19,6 +19,7 @@ Include all patients in CLIF with at least one microbiology culture collected du
 
 ## Initial Analysis Plan
 
+- Identify the ICU culture cohort as patients/hospitalizations with at least one culture collected during an ICU interval, then retain every culture row collected during ICU time across all specimen types.
 - Define the denominator as patients with at least one culture collected.
 - Summarize cultures per patient, cultures per encounter, specimen type mix, and timing relative to admission or ICU time where available.
 - Classify culture result status as positive, negative/no growth, contaminated/mixed flora when distinguishable, and indeterminate/missing.
@@ -34,6 +35,16 @@ Include all patients in CLIF with at least one microbiology culture collected du
 - `data/`: non-sensitive data documentation and derived public metadata only
 - `docs/`: protocol notes, data dictionaries, and manuscript materials
 - `output/`: generated tables, figures, and intermediate non-sensitive outputs
+
+## First Analysis Step
+
+Configure local CLIF table paths with `config/config.json`, then run:
+
+```r
+source("code/01_identify_icu_culture_cohort.R")
+```
+
+This writes timestamped ICU culture cohort exports under `output/cohort/`.
 
 ## Data Governance
 
