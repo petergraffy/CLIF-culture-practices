@@ -398,7 +398,7 @@ plot_overall_stacked_bar <- function(data, title) {
     scale_y_continuous(labels = comma) +
     labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
     stacked_time_theme +
-    guides(fill = guide_legend(ncol = 2))
+    guides(fill = guide_legend(ncol = 3))
 }
 
 plot_faceted_stacked_bar <- function(data, title) {
@@ -420,7 +420,7 @@ plot_faceted_stacked_bar <- function(data, title) {
     scale_y_continuous(labels = comma) +
     labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
     stacked_time_theme +
-    guides(fill = guide_legend(ncol = 2))
+    guides(fill = guide_legend(ncol = 3))
 }
 
 p_group_overall <- plot_overall_bar(
