@@ -55,6 +55,76 @@ drop_negative_organism_name <- function(x) {
 make_within_label <- function(label, facet) paste(label, facet, sep = "___")
 strip_within_label <- function(x) str_replace(x, "___.*$", "")
 
+classify_organism_type <- function(x) {
+  x_clean <- str_to_lower(coalesce(x, ""))
+  case_when(
+    str_detect(x_clean, "candida|yeast|fung|aspergillus|cryptococcus|mold|mould|saccharomyces") ~ "Fungi/yeast",
+    str_detect(x_clean, "mycobacter|\\bafb\\b|acid fast") ~ "Mycobacteria/AFB",
+    str_detect(x_clean, "anaerob|bacteroides|clostrid|prevotella|fusobacter|cutibacter|propionibacter") ~ "Anaerobes",
+    str_detect(x_clean, "staphylococcus|streptococcus|enterococcus|bacillus|corynebacter|lactobacillus|listeria|gram_positive|gram positive|gpc|coag_pos|coag_neg|coagneg") ~ "Gram positive bacteria",
+    str_detect(x_clean, "pseudomonas|stenotrophomonas|xanthomonas|klebsiella|enterobacter|escherichia|serratia|haemophilus|citrobacter|acinetobacter|proteus|moraxella|neisseria|salmonella|shigella|campylobacter|burkholderia|cepacia|legionella|gram_negative|gram negative|gnr") ~ "Gram negative bacteria",
+    str_detect(x_clean, "virus|viral|covid|sars|influenza|rsv|herpes|cmv|adenovirus") ~ "Virus",
+    str_detect(x_clean, "bacteria|gram|cocci|bacilli|rods") ~ "Other bacteria",
+    TRUE ~ "Other/unspecified"
+  )
+}
+
+organism_type_levels <- c(
+  "Gram positive bacteria",
+  "Gram negative bacteria",
+  "Fungi/yeast",
+  "Mycobacteria/AFB",
+  "Anaerobes",
+  "Other bacteria",
+  "Virus",
+  "Other/unspecified"
+)
+
+organism_type_base_colors <- c(
+  "Gram positive bacteria" = "#2F6C99",
+  "Gram negative bacteria" = "#D55E00",
+  "Fungi/yeast" = "#7B4AB8",
+  "Mycobacteria/AFB" = "#008B8B",
+  "Anaerobes" = "#8C6D31",
+  "Other bacteria" = "#4E8F4A",
+  "Virus" = "#C44E52",
+  "Other/unspecified" = "#6B7280"
+)
+
+organism_palette_caption <- paste(
+  "Color:",
+  "blue Gram+;",
+  "orange/brown Gram-;",
+  "purple fungi/yeast;",
+  "green other bacteria;",
+  "gray other/unspecified."
+)
+
+make_shade_ramp <- function(base_color, n) {
+  if (n <= 1) return(base_color)
+  grDevices::colorRampPalette(c("#F2F4F8", base_color, "#263238"))(n + 2)[2:(n + 1)]
+}
+
+make_organism_palette <- function(data) {
+  palette_data <- data %>%
+    mutate(
+      organism_type = factor(coalesce(organism_type, "Other/unspecified"), levels = organism_type_levels),
+      n_detection_rows = coalesce(n_detection_rows, 0L)
+    ) %>%
+    group_by(organism_label, organism_type) %>%
+    summarise(total_detection_rows = sum(n_detection_rows), .groups = "drop") %>%
+    arrange(organism_type, desc(total_detection_rows), organism_label) %>%
+    group_by(organism_type) %>%
+    mutate(
+      type_index = row_number(),
+      type_n = n(),
+      color = make_shade_ramp(organism_type_base_colors[as.character(first(organism_type))], first(type_n))[type_index]
+    ) %>%
+    ungroup()
+
+  setNames(palette_data$color, palette_data$organism_label)
+}
+
 site_name <- Sys.getenv("CLIF_SITE_NAME", unset = "SITE")
 row_path <- Sys.getenv("ICU_CULTURE_ROWS_PATH", unset = NA_character_)
 top_n_culture_types <- as.integer(Sys.getenv("TOP_N_CULTURE_TYPES", unset = "8"))
@@ -120,6 +190,8 @@ summarise_detection <- function(data, organism_var, label_var) {
       .groups = "drop"
     ) %>%
     rename(organism = all_of(organism_var), organism_label = all_of(label_var)) %>%
+    mutate(organism_type = classify_organism_type(organism)) %>%
+    relocate(organism_type, .after = organism_label) %>%
     arrange(desc(n_detection_rows), organism_label)
 }
 
@@ -134,6 +206,8 @@ summarise_detection_by_type <- function(data, organism_var, label_var) {
       .groups = "drop"
     ) %>%
     rename(organism = all_of(organism_var), organism_label = all_of(label_var)) %>%
+    mutate(organism_type = classify_organism_type(organism)) %>%
+    relocate(organism_type, .after = organism_label) %>%
     arrange(culture_type, desc(n_detection_rows), organism_label)
 }
 
@@ -172,7 +246,9 @@ monthly_detection <- function(data, organism_var, label_var, top_data) {
       nesting(!!organism_sym, organism_label),
       fill = list(n_detection_rows = 0L, n_culture_events = 0L)
     ) %>%
-    rename(organism = all_of(organism_var))
+    rename(organism = all_of(organism_var)) %>%
+    mutate(organism_type = classify_organism_type(organism)) %>%
+    relocate(organism_type, .after = organism_label)
 }
 
 monthly_detection_by_type <- function(data, organism_var, label_var, top_data) {
@@ -195,7 +271,9 @@ monthly_detection_by_type <- function(data, organism_var, label_var, top_data) {
       nesting(culture_type, !!organism_sym, organism_label),
       fill = list(n_detection_rows = 0L, n_culture_events = 0L)
     ) %>%
-    rename(organism = all_of(organism_var))
+    rename(organism = all_of(organism_var)) %>%
+    mutate(organism_type = classify_organism_type(organism)) %>%
+    relocate(organism_type, .after = organism_label)
 }
 
 top_group_overall <- organism_group_overall %>% slice_head(n = top_n_overall)
@@ -272,82 +350,89 @@ stacked_time_theme <- theme_minimal(base_size = 12) +
     legend.position = "bottom"
   )
 
-plot_overall_bar <- function(data, title, fill) {
-  data %>%
+plot_overall_bar <- function(data, title) {
+  plot_data <- data %>%
     slice_head(n = top_n_overall) %>%
     mutate(organism_label = fct_reorder(organism_label, n_detection_rows)) %>%
-    ggplot(aes(n_detection_rows, organism_label)) +
-    geom_col(fill = fill) +
+    arrange(factor(organism_type, levels = organism_type_levels), desc(n_detection_rows), organism_label)
+
+  ggplot(plot_data, aes(n_detection_rows, organism_label, fill = organism_label)) +
+    geom_col(color = "white", linewidth = 0.15) +
+    scale_fill_manual(values = make_organism_palette(plot_data)) +
     scale_x_continuous(labels = comma) +
-    labs(title = title, x = "Positive organism detection rows", y = NULL) +
+    labs(title = title, x = "Positive organism detection rows", y = NULL, caption = organism_palette_caption) +
     plot_theme
 }
 
-plot_faceted_bar <- function(data, title, fill) {
-  top_by_type(data) %>%
+plot_faceted_bar <- function(data, title) {
+  plot_data <- top_by_type(data) %>%
     mutate(
       organism_label_within = make_within_label(organism_label, culture_type),
       organism_label_within = fct_reorder(organism_label_within, n_detection_rows)
-    ) %>%
-    ggplot(aes(n_detection_rows, organism_label_within)) +
-    geom_col(fill = fill) +
+    )
+
+  ggplot(plot_data, aes(n_detection_rows, organism_label_within, fill = organism_label)) +
+    geom_col(color = "white", linewidth = 0.15) +
     facet_wrap(vars(culture_type), scales = "free", ncol = 2) +
+    scale_fill_manual(values = make_organism_palette(plot_data)) +
     scale_x_continuous(labels = comma) +
     scale_y_discrete(labels = strip_within_label) +
-    labs(title = title, x = "Positive organism detection rows", y = NULL) +
+    labs(title = title, x = "Positive organism detection rows", y = NULL, caption = organism_palette_caption) +
     plot_theme
 }
 
 plot_overall_stacked_bar <- function(data, title) {
-  data %>%
+  plot_data <- data %>%
     mutate(organism_label = fct_reorder(organism_label, n_detection_rows, .fun = sum, .desc = TRUE)) %>%
-    ggplot(aes(culture_month, n_detection_rows, fill = organism_label)) +
-    geom_col(width = 25 * 24 * 60 * 60) +
+    arrange(factor(organism_type, levels = organism_type_levels), organism_label)
+
+  ggplot(plot_data, aes(culture_month, n_detection_rows, fill = organism_label)) +
+    geom_col(width = 25 * 24 * 60 * 60, color = "white", linewidth = 0.05) +
+    scale_fill_manual(values = make_organism_palette(plot_data)) +
     scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
     scale_y_continuous(labels = comma) +
-    labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
+    labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL, caption = organism_palette_caption) +
     stacked_time_theme +
     guides(fill = guide_legend(ncol = 2))
 }
 
 plot_faceted_stacked_bar <- function(data, title) {
-  data %>%
+  plot_data <- data %>%
     group_by(culture_type, organism_label) %>%
     mutate(total_detection_rows = sum(n_detection_rows)) %>%
     ungroup() %>%
     mutate(organism_label = fct_reorder(organism_label, total_detection_rows, .desc = TRUE)) %>%
-    ggplot(aes(culture_month, n_detection_rows, fill = organism_label)) +
-    geom_col(width = 25 * 24 * 60 * 60) +
+    arrange(factor(organism_type, levels = organism_type_levels), organism_label)
+
+  ggplot(plot_data, aes(culture_month, n_detection_rows, fill = organism_label)) +
+    geom_col(width = 25 * 24 * 60 * 60, color = "white", linewidth = 0.05) +
     facet_wrap(vars(culture_type), scales = "free_y", ncol = 2) +
+    scale_fill_manual(values = make_organism_palette(plot_data)) +
     scale_x_datetime(date_breaks = "2 years", date_labels = "%Y") +
     scale_y_continuous(labels = comma) +
-    labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
+    labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL, caption = organism_palette_caption) +
     stacked_time_theme +
     guides(fill = guide_legend(ncol = 2))
 }
 
 p_group_overall <- plot_overall_bar(
   organism_group_overall,
-  "Predominant Organism Groups in Positive ICU Cultures",
-  "#4C78A8"
+  "Predominant Organism Groups in Positive ICU Cultures"
 )
 
 p_category_overall <- plot_overall_bar(
   organism_category_overall,
-  "Predominant Organisms in Positive ICU Cultures",
-  "#54A24B"
+  "Predominant Organisms in Positive ICU Cultures"
 )
 
 p_group_by_type <- plot_faceted_bar(
   organism_group_by_type,
-  "Predominant Organism Groups by Culture Type",
-  "#4C78A8"
+  "Predominant Organism Groups by Culture Type"
 )
 
 p_category_by_type <- plot_faceted_bar(
   organism_category_by_type,
-  "Predominant Organisms by Culture Type",
-  "#54A24B"
+  "Predominant Organisms by Culture Type"
 )
 
 p_group_overall_time <- plot_overall_stacked_bar(
