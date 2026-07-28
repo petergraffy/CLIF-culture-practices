@@ -135,9 +135,18 @@ type_path <- file.path(out_dir, glue("monthly_culture_events_by_type_{site_name}
 readr::write_csv(monthly_overall, overall_path)
 readr::write_csv(monthly_by_type, type_path)
 
-plot_theme <- theme_minimal(base_size = 12) +
+plot_theme <- theme_classic(base_size = 12) +
   theme(
+    axis.line = element_line(color = "black", linewidth = 0.35),
+    axis.ticks = element_line(color = "black", linewidth = 0.35),
+    axis.ticks.length = grid::unit(3, "pt"),
+    panel.grid = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
     panel.grid.minor = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
     legend.position = "bottom",
     plot.title.position = "plot",
     plot.caption.position = "plot"
