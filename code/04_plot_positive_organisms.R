@@ -551,9 +551,18 @@ plot_theme <- theme_minimal(base_size = 12) +
     legend.position = "none"
   )
 
-stacked_time_theme <- theme_minimal(base_size = 12) +
+stacked_time_theme <- theme_classic(base_size = 12) +
   theme(
+    axis.line = element_line(color = "black", linewidth = 0.35),
+    axis.ticks = element_line(color = "black", linewidth = 0.35),
+    axis.ticks.length = grid::unit(3, "pt"),
+    panel.grid = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
     panel.grid.minor = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
     plot.title.position = "plot",
     plot.caption.position = "plot",
     legend.position = "bottom"
