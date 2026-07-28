@@ -52,6 +52,22 @@ Optional date-window environment variables restrict by culture collection time:
 STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2025-12-31 Rscript code/01_identify_icu_culture_cohort.R
 ```
 
+## Time-Series Plots
+
+After cohort identification, run:
+
+```sh
+ICU_CULTURE_EVENTS_PATH=output/cohort/icu_culture_events_UCMC_YYYYMMDD_HHMMSS.csv Rscript code/02_plot_culture_time_series.R
+```
+
+Optional plot controls:
+
+```sh
+TOP_N_CULTURE_TYPES=8 PLOT_END_DATE=2024-12-31 Rscript code/02_plot_culture_time_series.R
+```
+
+This writes monthly summaries and PNG figures under `output/time_series/`.
+
 ## Data Governance
 
 Do not commit PHI, row-level CLIF extracts, credentials, or institution-specific restricted files. Use local paths, environment variables, or ignored private directories for sensitive inputs.
