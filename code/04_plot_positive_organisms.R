@@ -121,6 +121,10 @@ add_icu_admission_rates <- function(data, monthly_icu_admissions) {
     )
 }
 
+rolling_mean_trailing <- function(x, k = 6) {
+  as.numeric(stats::filter(x, rep(1 / k, k), sides = 1))
+}
+
 make_within_label <- function(label, facet) paste(label, facet, sep = "___")
 strip_within_label <- function(x) str_replace(x, "___.*$", "")
 
@@ -737,6 +741,47 @@ plot_top_organism_trends <- function(data, top_data, title, n = top_n_trends) {
     guides(fill = guide_legend(ncol = 3, byrow = FALSE))
 }
 
+plot_top_organism_trend_lines <- function(data, top_data, title, n = top_n_trends, rolling_months = 6) {
+  trend_lookup <- top_data %>%
+    slice_head(n = n) %>%
+    select(organism, organism_label, organism_type) %>%
+    distinct()
+
+  plot_data <- data %>%
+    inner_join(trend_lookup, by = c("organism", "organism_label", "organism_type")) %>%
+    arrange(organism_label, culture_month) %>%
+    group_by(organism_label) %>%
+    mutate(detection_rate_rolling = rolling_mean_trailing(detection_rows_per_100_icu_admissions, rolling_months)) %>%
+    ungroup() %>%
+    mutate(organism_label = factor(organism_label, levels = trend_lookup$organism_label))
+
+  legend_info <- make_organism_legend(plot_data)
+  plot_data <- plot_data %>%
+    mutate(organism_label = factor(as.character(organism_label), levels = legend_info$breaks))
+
+  ggplot(plot_data, aes(culture_month, detection_rows_per_100_icu_admissions, color = organism_label)) +
+    geom_point(size = 0.7, alpha = 0.18) +
+    geom_line(aes(y = detection_rate_rolling), linewidth = 0.95, na.rm = TRUE) +
+    scale_color_manual(
+      values = legend_info$values,
+      limits = legend_info$breaks,
+      breaks = legend_info$breaks,
+      labels = legend_info$labels,
+      drop = FALSE
+    ) +
+    scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
+    scale_y_continuous(labels = comma, limits = c(0, NA)) +
+    labs(
+      title = title,
+      subtitle = glue("Top {n} organisms by overall positive detection rows; lines show {rolling_months}-month trailing rolling means"),
+      x = NULL,
+      y = "Positive organism detections per 100 ICU admissions",
+      color = NULL
+    ) +
+    stacked_time_theme +
+    guides(color = guide_legend(ncol = 3, byrow = FALSE))
+}
+
 p_group_overall <- plot_overall_bar(
   organism_group_overall,
   "Predominant Organism Groups in Positive ICU Cultures"
@@ -835,6 +880,12 @@ p_top_organism_trends <- plot_top_organism_trends(
   "Monthly Detection Rates for Top Organisms in Positive ICU Cultures"
 )
 
+p_top_organism_trend_lines <- plot_top_organism_trend_lines(
+  monthly_organism_category_overall_rate,
+  organism_category_overall,
+  "Monthly Detection Rates for Top Organisms in Positive ICU Cultures"
+)
+
 plot_paths <- c(
   organism_group_overall = file.path(out_dir, glue("positive_organism_group_overall_{site_name}_{stamp}.png")),
   organism_category_overall = file.path(out_dir, glue("positive_organism_category_overall_{site_name}_{stamp}.png")),
@@ -852,7 +903,8 @@ plot_paths <- c(
   monthly_organism_category_by_type_rate = file.path(out_dir, glue("monthly_positive_organism_category_by_culture_type_per_100_icu_admissions_{site_name}_{stamp}.png")),
   monthly_organism_group_five_panel_rate = file.path(out_dir, glue("monthly_positive_organism_group_five_panel_per_100_icu_admissions_{site_name}_{stamp}.png")),
   monthly_organism_category_five_panel_rate = file.path(out_dir, glue("monthly_positive_organism_category_five_panel_per_100_icu_admissions_{site_name}_{stamp}.png")),
-  top_organism_trends_rate = file.path(out_dir, glue("monthly_top_organism_detection_rates_per_100_icu_admissions_{site_name}_{stamp}.png"))
+  top_organism_trends_rate = file.path(out_dir, glue("monthly_top_organism_detection_rates_per_100_icu_admissions_{site_name}_{stamp}.png")),
+  top_organism_trend_lines_rate = file.path(out_dir, glue("monthly_top_organism_detection_rates_rolling6_lines_per_100_icu_admissions_{site_name}_{stamp}.png"))
 )
 
 ggsave(plot_paths[["organism_group_overall"]], p_group_overall, width = 9, height = 7, dpi = 300)
@@ -872,6 +924,7 @@ ggsave(plot_paths[["monthly_organism_category_by_type_rate"]], p_category_by_typ
 ggsave(plot_paths[["monthly_organism_group_five_panel_rate"]], p_group_five_panel_time_rate, width = 14, height = 18, dpi = 300)
 ggsave(plot_paths[["monthly_organism_category_five_panel_rate"]], p_category_five_panel_time_rate, width = 14, height = 18, dpi = 300)
 ggsave(plot_paths[["top_organism_trends_rate"]], p_top_organism_trends, width = 12, height = 8, dpi = 300)
+ggsave(plot_paths[["top_organism_trend_lines_rate"]], p_top_organism_trend_lines, width = 12, height = 8, dpi = 300)
 
 message("Positive organism rows after excluding explicit negative organism names: ", nrow(positive_rows))
 message("Excluded explicit negative organism-name rows from detected-organism summaries: ", sum(rows$positive_culture & rows$explicit_negative_name, na.rm = TRUE))
