@@ -125,7 +125,22 @@ microbiology_culture <- read_tbl("microbiology_culture") %>%
     fluid_name = str_to_lower(str_trim(as.character(fluid_name))),
     fluid_category = str_to_lower(str_trim(as.character(fluid_category))),
     method_name = str_to_lower(str_trim(as.character(method_name))),
-    method_category = str_to_lower(str_trim(as.character(method_category)))
+    method_category = str_to_lower(str_trim(as.character(method_category))),
+    organism_category = if ("organism_category" %in% names(.)) {
+      str_to_lower(str_trim(as.character(organism_category)))
+    } else {
+      NA_character_
+    },
+    organism_group = if ("organism_group" %in% names(.)) {
+      str_to_lower(str_trim(as.character(organism_group)))
+    } else {
+      NA_character_
+    }
+  ) %>%
+  mutate(
+    organism_group = coalesce(na_if(organism_group, ""), organism_category),
+    no_growth = organism_group %in% c("no_growth", "no growth"),
+    positive_culture = !is.na(organism_group) & !no_growth
   ) %>%
   filter(method_category == "culture", !is.na(collect_dttm)) %>%
   filter(is.na(study_start_dttm) | collect_dttm >= study_start_dttm) %>%
@@ -153,7 +168,11 @@ icu_culture_events <- icu_culture_rows %>%
     method_name,
     method_category
   ) %>%
-  summarise(n_culture_rows = n(), .groups = "drop") %>%
+  summarise(
+    n_culture_rows = n(),
+    any_positive_culture = any(positive_culture, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
   mutate(
     culture_month = floor_date(collect_dttm, "month"),
     culture_type = clean_label(coalesce(na_if(fluid_category, ""), "missing")),
@@ -241,6 +260,37 @@ monthly_overall_rates <- icu_culture_events %>%
   ) %>%
   arrange(calendar_month)
 
+monthly_result_status_rates <- icu_culture_events %>%
+  mutate(culture_result = if_else(any_positive_culture, "Positive", "Negative")) %>%
+  group_by(calendar_month = culture_month, culture_result) %>%
+  summarise(
+    n_culture_events = n(),
+    n_icu_admissions_with_culture_result = n_distinct(icu_admission_id),
+    .groups = "drop"
+  ) %>%
+  complete(
+    calendar_month = month_seq,
+    culture_result = c("Negative", "Positive"),
+    fill = list(n_culture_events = 0L, n_icu_admissions_with_culture_result = 0L)
+  ) %>%
+  left_join(monthly_icu_admissions, by = "calendar_month") %>%
+  mutate(
+    site_name = site_name,
+    care_setting = "ICU",
+    culture_result = factor(culture_result, levels = c("Negative", "Positive")),
+    culture_events_per_100_icu_admissions = if_else(
+      n_icu_admissions > 0,
+      100 * n_culture_events / n_icu_admissions,
+      NA_real_
+    ),
+    icu_admissions_with_culture_result_per_100_icu_admissions = if_else(
+      n_icu_admissions > 0,
+      100 * n_icu_admissions_with_culture_result / n_icu_admissions,
+      NA_real_
+    )
+  ) %>%
+  arrange(calendar_month, culture_result)
+
 culture_type_palette <- c(
   "Blood buffy" = "#4C78A8",
   "Respiratory tract" = "#F58518",
@@ -260,6 +310,7 @@ extra_palette <- if (length(extra_specimen_types) > 0) {
   character()
 }
 available_palette <- c(culture_type_palette, extra_palette)[specimen_type_levels]
+result_status_palette <- c("Negative" = "#8F8F8F", "Positive" = "#B44E4E")
 
 plot_theme <- theme_classic(base_size = 12) +
   theme(
@@ -303,6 +354,23 @@ p_rate_lines <- monthly_culture_events_by_type %>%
   ) +
   plot_theme
 
+p_result_status_rate <- ggplot(
+  monthly_result_status_rates,
+  aes(calendar_month, culture_events_per_100_icu_admissions, fill = culture_result)
+) +
+  geom_col(width = month_bar_width, color = "white", linewidth = 0.08) +
+  scale_fill_manual(values = result_status_palette) +
+  scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
+  scale_y_continuous(labels = comma, limits = c(0, NA)) +
+  labs(
+    title = "Monthly ICU Culture Collection Rates by Result Status",
+    subtitle = "Positive and negative culture events per 100 ICU admissions",
+    x = NULL,
+    y = "Culture events per 100 ICU admissions",
+    fill = NULL
+  ) +
+  plot_theme
+
 out_dir <- file.path("output", "rates")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
@@ -310,17 +378,21 @@ stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 paths <- c(
   monthly_icu_admissions = file.path(out_dir, glue("monthly_icu_admissions_{site_name}_{stamp}.csv")),
   monthly_overall_rates = file.path(out_dir, glue("monthly_overall_culture_rates_per_100_icu_admissions_{site_name}_{stamp}.csv")),
+  monthly_result_status_rates = file.path(out_dir, glue("monthly_result_status_culture_rates_per_100_icu_admissions_{site_name}_{stamp}.csv")),
   monthly_type_rates = file.path(out_dir, glue("monthly_specimen_type_culture_rates_per_100_icu_admissions_{site_name}_{stamp}.csv")),
   stacked_rate_plot = file.path(out_dir, glue("monthly_specimen_type_culture_rates_stacked_per_100_icu_admissions_{site_name}_{stamp}.png")),
-  line_rate_plot = file.path(out_dir, glue("monthly_specimen_type_culture_rates_lines_per_100_icu_admissions_{site_name}_{stamp}.png"))
+  line_rate_plot = file.path(out_dir, glue("monthly_specimen_type_culture_rates_lines_per_100_icu_admissions_{site_name}_{stamp}.png")),
+  result_status_rate_plot = file.path(out_dir, glue("monthly_result_status_culture_rates_stacked_per_100_icu_admissions_{site_name}_{stamp}.png"))
 )
 
 write_csv(monthly_icu_admissions, paths[["monthly_icu_admissions"]])
 write_csv(monthly_overall_rates, paths[["monthly_overall_rates"]])
+write_csv(monthly_result_status_rates, paths[["monthly_result_status_rates"]])
 write_csv(monthly_culture_events_by_type, paths[["monthly_type_rates"]])
 
 ggsave(paths[["stacked_rate_plot"]], p_rate_stacked, width = 12, height = 7, dpi = 300)
 ggsave(paths[["line_rate_plot"]], p_rate_lines, width = 12, height = 7, dpi = 300)
+ggsave(paths[["result_status_rate_plot"]], p_result_status_rate, width = 12, height = 7, dpi = 300)
 
 message("Monthly ICU admission denominator summary:")
 print(monthly_icu_admissions %>% summarise(
@@ -340,6 +412,18 @@ print(monthly_overall_rates %>% summarise(
   min_monthly_events_per_100_icu_admissions = min(culture_events_per_100_icu_admissions, na.rm = TRUE),
   max_monthly_events_per_100_icu_admissions = max(culture_events_per_100_icu_admissions, na.rm = TRUE)
 ), width = Inf)
+
+message("")
+message("Culture result status rate summary:")
+print(monthly_result_status_rates %>%
+  group_by(culture_result) %>%
+  summarise(
+    total_culture_events = sum(n_culture_events),
+    median_monthly_events_per_100_icu_admissions = median(culture_events_per_100_icu_admissions, na.rm = TRUE),
+    min_monthly_events_per_100_icu_admissions = min(culture_events_per_100_icu_admissions, na.rm = TRUE),
+    max_monthly_events_per_100_icu_admissions = max(culture_events_per_100_icu_admissions, na.rm = TRUE),
+    .groups = "drop"
+  ), width = Inf)
 
 message("")
 message("Specimen types displayed separately:")
