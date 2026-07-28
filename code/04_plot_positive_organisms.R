@@ -75,6 +75,7 @@ rows <- readr::read_csv(row_path, show_col_types = FALSE) %>%
     culture_month = floor_date(collect_dttm, "month"),
     fluid_category = coalesce(na_if(fluid_category, ""), "missing"),
     culture_type = clean_label(fluid_category),
+    culture_type = if_else(culture_type %in% c("Other", "Other unspecified"), "Other", culture_type),
     organism_group = coalesce(na_if(organism_group, ""), "missing"),
     organism_category = coalesce(na_if(organism_category, ""), organism_group, "missing"),
     organism_name = coalesce(na_if(organism_name, ""), organism_category),
