@@ -16,6 +16,19 @@ For qualifying hospitalizations, export every `microbiology_culture` row satisfy
 
 No specimen/fluid category restrictions are applied. Blood, urine, respiratory, wound, CSF, stool/GI, and all other culture types are retained.
 
+## Study Window
+
+By default, the script includes all available culture collection dates. To restrict the run, set:
+
+- `STUDY_START_DATE`, inclusive, formatted as `YYYY-MM-DD`
+- `STUDY_END_DATE`, inclusive, formatted as `YYYY-MM-DD`
+
+For example:
+
+```sh
+STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2025-12-31 Rscript code/01_identify_icu_culture_cohort.R
+```
+
 ## Outputs
 
 `code/01_identify_icu_culture_cohort.R` writes timestamped CSVs under `output/cohort/`:

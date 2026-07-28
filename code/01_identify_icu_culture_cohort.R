@@ -23,6 +23,8 @@ source("utils/clif_io.R")
 
 site_name <- clif_site_name
 tables_path <- clif_tables_path
+study_start_date <- Sys.getenv("STUDY_START_DATE", unset = NA_character_)
+study_end_date <- Sys.getenv("STUDY_END_DATE", unset = NA_character_)
 
 safe_ts <- function(x, tz = "UTC") {
   if (inherits(x, "POSIXt")) return(as.POSIXct(x, tz = tz))
@@ -41,6 +43,20 @@ safe_ts <- function(x, tz = "UTC") {
 count_nonmissing <- function(x) sum(!is.na(x))
 
 message("Using CLIF tables: ", tables_path)
+
+study_start_dttm <- if (!is.na(study_start_date) && nzchar(study_start_date)) {
+  safe_ts(study_start_date)
+} else {
+  as.POSIXct(NA)
+}
+study_end_dttm <- if (!is.na(study_end_date) && nzchar(study_end_date)) {
+  safe_ts(study_end_date) + days(1) - seconds(1)
+} else {
+  as.POSIXct(NA)
+}
+
+if (!is.na(study_start_dttm)) message("Study start: ", study_start_dttm)
+if (!is.na(study_end_dttm)) message("Study end: ", study_end_dttm)
 
 hospitalization <- read_tbl("hospitalization") %>%
   transmute(
@@ -106,13 +122,16 @@ microbiology_culture <- read_tbl("microbiology_culture") %>%
     no_growth = organism_group %in% c("no_growth", "no growth"),
     positive_culture = !is.na(organism_group) & !no_growth
   ) %>%
-  filter(method_category == "culture", !is.na(collect_dttm))
+  filter(method_category == "culture", !is.na(collect_dttm)) %>%
+  filter(is.na(study_start_dttm) | collect_dttm >= study_start_dttm) %>%
+  filter(is.na(study_end_dttm) | collect_dttm <= study_end_dttm)
 
 icu_culture_rows <- microbiology_culture %>%
   inner_join(
     icu_intervals %>%
       select(patient_id, hospitalization_id, icu_interval_id, icu_in_dttm, icu_out_dttm, icu_interval_missing_out),
-    by = c("patient_id", "hospitalization_id")
+    by = c("patient_id", "hospitalization_id"),
+    relationship = "many-to-many"
   ) %>%
   filter(collect_dttm >= icu_in_dttm, collect_dttm <= icu_out_dttm) %>%
   distinct(microbiology_row_id, icu_interval_id, .keep_all = TRUE) %>%
@@ -162,6 +181,8 @@ fluid_summary <- icu_culture_rows %>%
 cohort_summary <- tibble(
   site_name = site_name,
   tables_path = tables_path,
+  study_start_date = if_else(is.na(study_start_dttm), NA_character_, as.character(as.Date(study_start_dttm))),
+  study_end_date = if_else(is.na(study_end_dttm), NA_character_, as.character(as.Date(study_end_dttm))),
   cohort_definition = "hospitalizations with at least one microbiology culture collected during an ICU interval",
   culture_export_definition = "all microbiology_culture rows with method_category == culture and collect_dttm within an ICU interval for qualifying hospitalizations",
   n_patients = n_distinct(cohort_hospitalizations$patient_id),

@@ -46,6 +46,12 @@ source("code/01_identify_icu_culture_cohort.R")
 
 This writes timestamped ICU culture cohort exports under `output/cohort/`.
 
+Optional date-window environment variables restrict by culture collection time:
+
+```sh
+STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2025-12-31 Rscript code/01_identify_icu_culture_cohort.R
+```
+
 ## Data Governance
 
 Do not commit PHI, row-level CLIF extracts, credentials, or institution-specific restricted files. Use local paths, environment variables, or ignored private directories for sensitive inputs.
