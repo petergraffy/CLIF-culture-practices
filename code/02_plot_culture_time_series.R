@@ -143,6 +143,18 @@ plot_theme <- theme_minimal(base_size = 12) +
     plot.caption.position = "plot"
   )
 month_bar_width <- 25 * 24 * 60 * 60
+culture_type_palette <- c(
+  "Blood buffy" = "#4C78A8",
+  "Respiratory tract" = "#F58518",
+  "Genito urinary tract" = "#54A24B",
+  "Meninges csf" = "#B279A2",
+  "Other unspecified" = "#72B7B2",
+  "Pleural cavity fluid" = "#E45756",
+  "Respiratory tract lower" = "#EECA3B",
+  "Woundsite" = "#FF9DA6",
+  "Other" = "#9D9D9D"
+)
+available_palette <- culture_type_palette[names(culture_type_palette) %in% levels(monthly_by_type$culture_type)]
 
 p_overall_volume <- ggplot(monthly_overall, aes(culture_month, n_events)) +
   geom_col(fill = "#2f6f73", width = month_bar_width) +
@@ -169,6 +181,7 @@ p_overall_positivity <- ggplot(monthly_overall, aes(culture_month, positive_even
 
 p_type_volume <- ggplot(monthly_by_type, aes(culture_month, n_events, color = culture_type)) +
   geom_line(linewidth = 0.75) +
+  scale_color_manual(values = available_palette) +
   scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
   scale_y_continuous(labels = comma) +
   labs(
@@ -179,10 +192,25 @@ p_type_volume <- ggplot(monthly_by_type, aes(culture_month, n_events, color = cu
   ) +
   plot_theme
 
+p_type_stacked_volume <- ggplot(monthly_by_type, aes(culture_month, n_events, fill = culture_type)) +
+  geom_col(width = month_bar_width, color = "white", linewidth = 0.08) +
+  scale_fill_manual(values = available_palette) +
+  scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Monthly ICU Culture Events by Culture Type",
+    subtitle = "Stacked monthly event counts; less common culture types grouped as Other",
+    x = NULL,
+    y = "Culture events",
+    fill = NULL
+  ) +
+  plot_theme
+
 p_type_positivity <- monthly_by_type %>%
   filter(n_events >= 10) %>%
   ggplot(aes(culture_month, positive_event_rate, color = culture_type)) +
   geom_line(linewidth = 0.75) +
+  scale_color_manual(values = available_palette) +
   scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
   scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, NA)) +
   labs(
@@ -213,6 +241,7 @@ plot_paths <- c(
   overall_volume = file.path(out_dir, glue("monthly_overall_culture_volume_{site_name}_{stamp}.png")),
   overall_positivity = file.path(out_dir, glue("monthly_overall_culture_positivity_{site_name}_{stamp}.png")),
   type_volume = file.path(out_dir, glue("monthly_culture_volume_by_type_{site_name}_{stamp}.png")),
+  type_stacked_volume = file.path(out_dir, glue("monthly_culture_volume_stacked_by_type_{site_name}_{stamp}.png")),
   type_positivity = file.path(out_dir, glue("monthly_culture_positivity_by_type_{site_name}_{stamp}.png")),
   type_facets = file.path(out_dir, glue("monthly_culture_volume_major_type_facets_{site_name}_{stamp}.png"))
 )
@@ -220,6 +249,7 @@ plot_paths <- c(
 ggsave(plot_paths[["overall_volume"]], p_overall_volume, width = 9, height = 5, dpi = 300)
 ggsave(plot_paths[["overall_positivity"]], p_overall_positivity, width = 9, height = 5, dpi = 300)
 ggsave(plot_paths[["type_volume"]], p_type_volume, width = 11, height = 6, dpi = 300)
+ggsave(plot_paths[["type_stacked_volume"]], p_type_stacked_volume, width = 11, height = 6.5, dpi = 300)
 ggsave(plot_paths[["type_positivity"]], p_type_positivity, width = 11, height = 6, dpi = 300)
 ggsave(plot_paths[["type_facets"]], p_type_facets, width = 11, height = 9, dpi = 300)
 
