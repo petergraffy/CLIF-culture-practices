@@ -449,6 +449,23 @@ stacked_time_theme <- theme_minimal(base_size = 12) +
     legend.position = "bottom"
   )
 
+five_panel_theme <- theme_classic(base_size = 12) +
+  theme(
+    axis.line = element_line(color = "black", linewidth = 0.35),
+    axis.ticks = element_line(color = "black", linewidth = 0.35),
+    axis.ticks.length = grid::unit(3, "pt"),
+    panel.grid = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    plot.title.position = "plot",
+    plot.caption.position = "plot",
+    legend.position = "bottom"
+  )
+
 plot_overall_bar <- function(data, title) {
   plot_data <- data %>%
     slice_head(n = top_n_overall) %>%
@@ -558,7 +575,7 @@ plot_five_panel_stacked_bar <- function(data, title) {
     scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
     scale_y_continuous(labels = comma) +
     labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
-    stacked_time_theme +
+    five_panel_theme +
     guides(fill = guide_legend(ncol = 3, byrow = FALSE))
 }
 
@@ -633,8 +650,8 @@ ggsave(plot_paths[["monthly_organism_group_overall"]], p_group_overall_time, wid
 ggsave(plot_paths[["monthly_organism_category_overall"]], p_category_overall_time, width = 12, height = 8, dpi = 300)
 ggsave(plot_paths[["monthly_organism_group_by_type"]], p_group_by_type_time, width = 14, height = 12, dpi = 300)
 ggsave(plot_paths[["monthly_organism_category_by_type"]], p_category_by_type_time, width = 14, height = 12, dpi = 300)
-ggsave(plot_paths[["monthly_organism_group_five_panel"]], p_group_five_panel_time, width = 14, height = 12, dpi = 300)
-ggsave(plot_paths[["monthly_organism_category_five_panel"]], p_category_five_panel_time, width = 14, height = 12, dpi = 300)
+ggsave(plot_paths[["monthly_organism_group_five_panel"]], p_group_five_panel_time, width = 14, height = 18, dpi = 300)
+ggsave(plot_paths[["monthly_organism_category_five_panel"]], p_category_five_panel_time, width = 14, height = 18, dpi = 300)
 
 message("Positive organism rows after excluding explicit negative organism names: ", nrow(positive_rows))
 message("Excluded explicit negative organism-name rows from detected-organism summaries: ", sum(rows$positive_culture & rows$explicit_negative_name, na.rm = TRUE))
