@@ -263,7 +263,7 @@ plot_theme <- theme_minimal(base_size = 12) +
     legend.position = "none"
   )
 
-line_plot_theme <- theme_minimal(base_size = 12) +
+stacked_time_theme <- theme_minimal(base_size = 12) +
   theme(
     panel.grid.minor = element_blank(),
     plot.title.position = "plot",
@@ -297,32 +297,32 @@ plot_faceted_bar <- function(data, title, fill) {
     plot_theme
 }
 
-plot_overall_line <- function(data, title) {
+plot_overall_stacked_bar <- function(data, title) {
   data %>%
     mutate(organism_label = fct_reorder(organism_label, n_detection_rows, .fun = sum, .desc = TRUE)) %>%
-    ggplot(aes(culture_month, n_detection_rows, color = organism_label)) +
-    geom_line(linewidth = 0.75) +
+    ggplot(aes(culture_month, n_detection_rows, fill = organism_label)) +
+    geom_col(width = 25 * 24 * 60 * 60) +
     scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
     scale_y_continuous(labels = comma) +
-    labs(title = title, x = NULL, y = "Positive organism detection rows", color = NULL) +
-    line_plot_theme +
-    guides(color = guide_legend(ncol = 2))
+    labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
+    stacked_time_theme +
+    guides(fill = guide_legend(ncol = 2))
 }
 
-plot_faceted_line <- function(data, title) {
+plot_faceted_stacked_bar <- function(data, title) {
   data %>%
     group_by(culture_type, organism_label) %>%
     mutate(total_detection_rows = sum(n_detection_rows)) %>%
     ungroup() %>%
     mutate(organism_label = fct_reorder(organism_label, total_detection_rows, .desc = TRUE)) %>%
-    ggplot(aes(culture_month, n_detection_rows, color = organism_label)) +
-    geom_line(linewidth = 0.65) +
+    ggplot(aes(culture_month, n_detection_rows, fill = organism_label)) +
+    geom_col(width = 25 * 24 * 60 * 60) +
     facet_wrap(vars(culture_type), scales = "free_y", ncol = 2) +
     scale_x_datetime(date_breaks = "2 years", date_labels = "%Y") +
     scale_y_continuous(labels = comma) +
-    labs(title = title, x = NULL, y = "Positive organism detection rows", color = NULL) +
-    line_plot_theme +
-    guides(color = guide_legend(ncol = 2))
+    labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
+    stacked_time_theme +
+    guides(fill = guide_legend(ncol = 2))
 }
 
 p_group_overall <- plot_overall_bar(
@@ -349,22 +349,22 @@ p_category_by_type <- plot_faceted_bar(
   "#54A24B"
 )
 
-p_group_overall_time <- plot_overall_line(
+p_group_overall_time <- plot_overall_stacked_bar(
   monthly_organism_group_overall,
   "Monthly Predominant Organism Groups in Positive ICU Cultures"
 )
 
-p_category_overall_time <- plot_overall_line(
+p_category_overall_time <- plot_overall_stacked_bar(
   monthly_organism_category_overall,
   "Monthly Predominant Organisms in Positive ICU Cultures"
 )
 
-p_group_by_type_time <- plot_faceted_line(
+p_group_by_type_time <- plot_faceted_stacked_bar(
   monthly_organism_group_by_type,
   "Monthly Predominant Organism Groups by Culture Type"
 )
 
-p_category_by_type_time <- plot_faceted_line(
+p_category_by_type_time <- plot_faceted_stacked_bar(
   monthly_organism_category_by_type,
   "Monthly Predominant Organisms by Culture Type"
 )
