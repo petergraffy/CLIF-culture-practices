@@ -30,6 +30,10 @@ latest_file <- function(pattern, path = file.path("output", "cohort")) {
 
 safe_ts <- function(x, tz = "UTC") {
   if (inherits(x, "POSIXt")) return(as.POSIXct(x, tz = tz))
+  if (is.numeric(x)) {
+    x2 <- ifelse(x > 1e12, x / 1000, x)
+    return(as.POSIXct(x2, origin = "1970-01-01", tz = tz))
+  }
   suppressWarnings(lubridate::parse_date_time(
     x,
     orders = c("ymd_HMS", "ymd_HM", "ymd", "ymdTz", "ymdT", "mdy_HMS", "mdy_HM", "mdy"),
@@ -50,6 +54,71 @@ drop_negative_organism_name <- function(x) {
     coalesce(x, ""),
     regex("^(no|none|not) .*isolated|no growth|no .* detected|negative for", ignore_case = TRUE)
   )
+}
+
+read_clif_table_for_denominator <- function(tbl_base) {
+  if (!exists("read_tbl")) source("utils/clif_io.R")
+  read_tbl(tbl_base)
+}
+
+build_monthly_icu_admissions <- function(month_seq, plot_start_dttm, plot_end_dttm) {
+  hospitalization <- read_clif_table_for_denominator("hospitalization") %>%
+    transmute(
+      patient_id,
+      hospitalization_id,
+      admission_dttm = safe_ts(admission_dttm),
+      discharge_dttm = safe_ts(discharge_dttm)
+    )
+
+  adt <- read_clif_table_for_denominator("adt") %>%
+    transmute(
+      hospitalization_id,
+      icu_in_dttm = safe_ts(in_dttm),
+      icu_out_dttm_raw = safe_ts(out_dttm),
+      location_category = str_to_lower(str_trim(as.character(location_category)))
+    )
+
+  adt %>%
+    filter(location_category == "icu", !is.na(icu_in_dttm)) %>%
+    left_join(hospitalization, by = "hospitalization_id") %>%
+    mutate(icu_out_dttm = coalesce(icu_out_dttm_raw, discharge_dttm)) %>%
+    filter(!is.na(patient_id), !is.na(icu_out_dttm), icu_out_dttm > icu_in_dttm) %>%
+    arrange(patient_id, hospitalization_id, icu_in_dttm, icu_out_dttm) %>%
+    group_by(patient_id, hospitalization_id) %>%
+    mutate(
+      prior_max_icu_out_num = lag(cummax(as.numeric(icu_out_dttm))),
+      new_icu_admission = is.na(prior_max_icu_out_num) | as.numeric(icu_in_dttm) > prior_max_icu_out_num,
+      icu_admission_seq = cumsum(new_icu_admission)
+    ) %>%
+    group_by(patient_id, hospitalization_id, icu_admission_seq) %>%
+    summarise(
+      icu_in_dttm = min(icu_in_dttm, na.rm = TRUE),
+      icu_out_dttm = max(icu_out_dttm, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(icu_admission_month = floor_date(icu_in_dttm, "month")) %>%
+    filter(is.na(plot_start_dttm) | icu_in_dttm >= plot_start_dttm) %>%
+    filter(is.na(plot_end_dttm) | icu_in_dttm <= plot_end_dttm) %>%
+    count(icu_admission_month, name = "n_icu_admissions") %>%
+    complete(icu_admission_month = month_seq, fill = list(n_icu_admissions = 0L)) %>%
+    rename(culture_month = icu_admission_month)
+}
+
+add_icu_admission_rates <- function(data, monthly_icu_admissions) {
+  data %>%
+    left_join(monthly_icu_admissions, by = "culture_month") %>%
+    mutate(
+      detection_rows_per_100_icu_admissions = if_else(
+        n_icu_admissions > 0,
+        100 * n_detection_rows / n_icu_admissions,
+        NA_real_
+      ),
+      culture_events_per_100_icu_admissions = if_else(
+        n_icu_admissions > 0,
+        100 * n_culture_events / n_icu_admissions,
+        NA_real_
+      )
+    )
 }
 
 make_within_label <- function(label, facet) paste(label, facet, sep = "___")
@@ -401,6 +470,33 @@ monthly_organism_category_five_panel <- monthly_detection_five_panel(
   top_category_overall
 )
 
+monthly_icu_admissions <- build_monthly_icu_admissions(month_seq, plot_start_dttm, plot_end_dttm)
+
+monthly_organism_group_overall_rate <- add_icu_admission_rates(
+  monthly_organism_group_overall,
+  monthly_icu_admissions
+)
+monthly_organism_category_overall_rate <- add_icu_admission_rates(
+  monthly_organism_category_overall,
+  monthly_icu_admissions
+)
+monthly_organism_group_by_type_rate <- add_icu_admission_rates(
+  monthly_organism_group_by_type,
+  monthly_icu_admissions
+)
+monthly_organism_category_by_type_rate <- add_icu_admission_rates(
+  monthly_organism_category_by_type,
+  monthly_icu_admissions
+)
+monthly_organism_group_five_panel_rate <- add_icu_admission_rates(
+  monthly_organism_group_five_panel,
+  monthly_icu_admissions
+)
+monthly_organism_category_five_panel_rate <- add_icu_admission_rates(
+  monthly_organism_category_five_panel,
+  monthly_icu_admissions
+)
+
 out_dir <- file.path("output", "organisms")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
@@ -417,7 +513,14 @@ paths <- c(
   monthly_organism_category_overall = file.path(out_dir, glue("monthly_positive_organism_category_overall_{site_name}_{stamp}.csv")),
   monthly_organism_category_by_type = file.path(out_dir, glue("monthly_positive_organism_category_by_culture_type_{site_name}_{stamp}.csv")),
   monthly_organism_group_five_panel = file.path(out_dir, glue("monthly_positive_organism_group_five_panel_{site_name}_{stamp}.csv")),
-  monthly_organism_category_five_panel = file.path(out_dir, glue("monthly_positive_organism_category_five_panel_{site_name}_{stamp}.csv"))
+  monthly_organism_category_five_panel = file.path(out_dir, glue("monthly_positive_organism_category_five_panel_{site_name}_{stamp}.csv")),
+  monthly_icu_admissions = file.path(out_dir, glue("monthly_icu_admissions_for_positive_organism_rates_{site_name}_{stamp}.csv")),
+  monthly_organism_group_overall_rate = file.path(out_dir, glue("monthly_positive_organism_group_overall_per_100_icu_admissions_{site_name}_{stamp}.csv")),
+  monthly_organism_group_by_type_rate = file.path(out_dir, glue("monthly_positive_organism_group_by_culture_type_per_100_icu_admissions_{site_name}_{stamp}.csv")),
+  monthly_organism_category_overall_rate = file.path(out_dir, glue("monthly_positive_organism_category_overall_per_100_icu_admissions_{site_name}_{stamp}.csv")),
+  monthly_organism_category_by_type_rate = file.path(out_dir, glue("monthly_positive_organism_category_by_culture_type_per_100_icu_admissions_{site_name}_{stamp}.csv")),
+  monthly_organism_group_five_panel_rate = file.path(out_dir, glue("monthly_positive_organism_group_five_panel_per_100_icu_admissions_{site_name}_{stamp}.csv")),
+  monthly_organism_category_five_panel_rate = file.path(out_dir, glue("monthly_positive_organism_category_five_panel_per_100_icu_admissions_{site_name}_{stamp}.csv"))
 )
 
 write_csv(organism_group_overall, paths[["organism_group_overall"]])
@@ -432,6 +535,13 @@ write_csv(monthly_organism_category_overall, paths[["monthly_organism_category_o
 write_csv(monthly_organism_category_by_type, paths[["monthly_organism_category_by_type"]])
 write_csv(monthly_organism_group_five_panel, paths[["monthly_organism_group_five_panel"]])
 write_csv(monthly_organism_category_five_panel, paths[["monthly_organism_category_five_panel"]])
+write_csv(monthly_icu_admissions, paths[["monthly_icu_admissions"]])
+write_csv(monthly_organism_group_overall_rate, paths[["monthly_organism_group_overall_rate"]])
+write_csv(monthly_organism_group_by_type_rate, paths[["monthly_organism_group_by_type_rate"]])
+write_csv(monthly_organism_category_overall_rate, paths[["monthly_organism_category_overall_rate"]])
+write_csv(monthly_organism_category_by_type_rate, paths[["monthly_organism_category_by_type_rate"]])
+write_csv(monthly_organism_group_five_panel_rate, paths[["monthly_organism_group_five_panel_rate"]])
+write_csv(monthly_organism_category_five_panel_rate, paths[["monthly_organism_category_five_panel_rate"]])
 
 plot_theme <- theme_minimal(base_size = 12) +
   theme(
@@ -499,15 +609,15 @@ plot_faceted_bar <- function(data, title) {
     plot_theme
 }
 
-plot_overall_stacked_bar <- function(data, title) {
+plot_overall_stacked_bar <- function(data, title, value_var = "n_detection_rows", y_label = "Positive organism detection rows") {
   plot_data <- data %>%
-    mutate(organism_label = fct_reorder(organism_label, n_detection_rows, .fun = sum, .desc = TRUE)) %>%
+    mutate(organism_label = fct_reorder(organism_label, .data[[value_var]], .fun = sum, .desc = TRUE)) %>%
     arrange(factor(organism_type, levels = organism_type_levels), organism_label)
   legend_info <- make_organism_legend(plot_data)
   plot_data <- plot_data %>%
     mutate(organism_label = factor(as.character(organism_label), levels = legend_info$breaks))
 
-  ggplot(plot_data, aes(culture_month, n_detection_rows, fill = organism_label)) +
+  ggplot(plot_data, aes(culture_month, .data[[value_var]], fill = organism_label)) +
     geom_col(width = 25 * 24 * 60 * 60, color = "white", linewidth = 0.05) +
     scale_fill_manual(
       values = legend_info$values,
@@ -518,15 +628,15 @@ plot_overall_stacked_bar <- function(data, title) {
     ) +
     scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
     scale_y_continuous(labels = comma) +
-    labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
+    labs(title = title, x = NULL, y = y_label, fill = NULL) +
     stacked_time_theme +
     guides(fill = guide_legend(ncol = 3, byrow = FALSE))
 }
 
-plot_faceted_stacked_bar <- function(data, title) {
+plot_faceted_stacked_bar <- function(data, title, value_var = "n_detection_rows", y_label = "Positive organism detection rows") {
   plot_data <- data %>%
     group_by(culture_type, organism_label) %>%
-    mutate(total_detection_rows = sum(n_detection_rows)) %>%
+    mutate(total_detection_rows = sum(.data[[value_var]], na.rm = TRUE)) %>%
     ungroup() %>%
     mutate(organism_label = fct_reorder(organism_label, total_detection_rows, .desc = TRUE)) %>%
     arrange(factor(organism_type, levels = organism_type_levels), organism_label)
@@ -534,7 +644,7 @@ plot_faceted_stacked_bar <- function(data, title) {
   plot_data <- plot_data %>%
     mutate(organism_label = factor(as.character(organism_label), levels = legend_info$breaks))
 
-  ggplot(plot_data, aes(culture_month, n_detection_rows, fill = organism_label)) +
+  ggplot(plot_data, aes(culture_month, .data[[value_var]], fill = organism_label)) +
     geom_col(width = 25 * 24 * 60 * 60, color = "white", linewidth = 0.05) +
     facet_wrap(vars(culture_type), scales = "free_y", ncol = 2) +
     scale_fill_manual(
@@ -546,23 +656,23 @@ plot_faceted_stacked_bar <- function(data, title) {
     ) +
     scale_x_datetime(date_breaks = "2 years", date_labels = "%Y") +
     scale_y_continuous(labels = comma) +
-    labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
+    labs(title = title, x = NULL, y = y_label, fill = NULL) +
     stacked_time_theme +
     guides(fill = guide_legend(ncol = 3, byrow = FALSE))
 }
 
-plot_five_panel_stacked_bar <- function(data, title) {
+plot_five_panel_stacked_bar <- function(data, title, value_var = "n_detection_rows", y_label = "Positive organism detection rows") {
   plot_data <- data %>%
     mutate(
       culture_panel = factor(culture_panel, levels = organism_panel_levels),
-      organism_label = fct_reorder(organism_label, n_detection_rows, .fun = sum, .desc = TRUE)
+      organism_label = fct_reorder(organism_label, .data[[value_var]], .fun = sum, .desc = TRUE)
     ) %>%
     arrange(factor(organism_type, levels = organism_type_levels), organism_label)
   legend_info <- make_organism_legend(plot_data)
   plot_data <- plot_data %>%
     mutate(organism_label = factor(as.character(organism_label), levels = legend_info$breaks))
 
-  ggplot(plot_data, aes(culture_month, n_detection_rows, fill = organism_label)) +
+  ggplot(plot_data, aes(culture_month, .data[[value_var]], fill = organism_label)) +
     geom_col(width = 25 * 24 * 60 * 60, color = "white", linewidth = 0.05) +
     facet_grid(rows = vars(culture_panel), scales = "free_y") +
     scale_fill_manual(
@@ -574,7 +684,7 @@ plot_five_panel_stacked_bar <- function(data, title) {
     ) +
     scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
     scale_y_continuous(labels = comma) +
-    labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
+    labs(title = title, x = NULL, y = y_label, fill = NULL) +
     five_panel_theme +
     guides(fill = guide_legend(ncol = 3, byrow = FALSE))
 }
@@ -629,6 +739,48 @@ p_category_five_panel_time <- plot_five_panel_stacked_bar(
   "Monthly Predominant Organisms in Positive ICU Cultures"
 )
 
+p_group_overall_time_rate <- plot_overall_stacked_bar(
+  monthly_organism_group_overall_rate,
+  "Monthly Predominant Organism Groups in Positive ICU Cultures per 100 ICU Admissions",
+  value_var = "detection_rows_per_100_icu_admissions",
+  y_label = "Positive organism detections per 100 ICU admissions"
+)
+
+p_category_overall_time_rate <- plot_overall_stacked_bar(
+  monthly_organism_category_overall_rate,
+  "Monthly Predominant Organisms in Positive ICU Cultures per 100 ICU Admissions",
+  value_var = "detection_rows_per_100_icu_admissions",
+  y_label = "Positive organism detections per 100 ICU admissions"
+)
+
+p_group_by_type_time_rate <- plot_faceted_stacked_bar(
+  monthly_organism_group_by_type_rate,
+  "Monthly Predominant Organism Groups by Culture Type per 100 ICU Admissions",
+  value_var = "detection_rows_per_100_icu_admissions",
+  y_label = "Positive organism detections per 100 ICU admissions"
+)
+
+p_category_by_type_time_rate <- plot_faceted_stacked_bar(
+  monthly_organism_category_by_type_rate,
+  "Monthly Predominant Organisms by Culture Type per 100 ICU Admissions",
+  value_var = "detection_rows_per_100_icu_admissions",
+  y_label = "Positive organism detections per 100 ICU admissions"
+)
+
+p_group_five_panel_time_rate <- plot_five_panel_stacked_bar(
+  monthly_organism_group_five_panel_rate,
+  "Monthly Predominant Organism Groups in Positive ICU Cultures per 100 ICU Admissions",
+  value_var = "detection_rows_per_100_icu_admissions",
+  y_label = "Positive organism detections per 100 ICU admissions"
+)
+
+p_category_five_panel_time_rate <- plot_five_panel_stacked_bar(
+  monthly_organism_category_five_panel_rate,
+  "Monthly Predominant Organisms in Positive ICU Cultures per 100 ICU Admissions",
+  value_var = "detection_rows_per_100_icu_admissions",
+  y_label = "Positive organism detections per 100 ICU admissions"
+)
+
 plot_paths <- c(
   organism_group_overall = file.path(out_dir, glue("positive_organism_group_overall_{site_name}_{stamp}.png")),
   organism_category_overall = file.path(out_dir, glue("positive_organism_category_overall_{site_name}_{stamp}.png")),
@@ -639,7 +791,13 @@ plot_paths <- c(
   monthly_organism_group_by_type = file.path(out_dir, glue("monthly_positive_organism_group_by_culture_type_{site_name}_{stamp}.png")),
   monthly_organism_category_by_type = file.path(out_dir, glue("monthly_positive_organism_category_by_culture_type_{site_name}_{stamp}.png")),
   monthly_organism_group_five_panel = file.path(out_dir, glue("monthly_positive_organism_group_five_panel_{site_name}_{stamp}.png")),
-  monthly_organism_category_five_panel = file.path(out_dir, glue("monthly_positive_organism_category_five_panel_{site_name}_{stamp}.png"))
+  monthly_organism_category_five_panel = file.path(out_dir, glue("monthly_positive_organism_category_five_panel_{site_name}_{stamp}.png")),
+  monthly_organism_group_overall_rate = file.path(out_dir, glue("monthly_positive_organism_group_overall_per_100_icu_admissions_{site_name}_{stamp}.png")),
+  monthly_organism_category_overall_rate = file.path(out_dir, glue("monthly_positive_organism_category_overall_per_100_icu_admissions_{site_name}_{stamp}.png")),
+  monthly_organism_group_by_type_rate = file.path(out_dir, glue("monthly_positive_organism_group_by_culture_type_per_100_icu_admissions_{site_name}_{stamp}.png")),
+  monthly_organism_category_by_type_rate = file.path(out_dir, glue("monthly_positive_organism_category_by_culture_type_per_100_icu_admissions_{site_name}_{stamp}.png")),
+  monthly_organism_group_five_panel_rate = file.path(out_dir, glue("monthly_positive_organism_group_five_panel_per_100_icu_admissions_{site_name}_{stamp}.png")),
+  monthly_organism_category_five_panel_rate = file.path(out_dir, glue("monthly_positive_organism_category_five_panel_per_100_icu_admissions_{site_name}_{stamp}.png"))
 )
 
 ggsave(plot_paths[["organism_group_overall"]], p_group_overall, width = 9, height = 7, dpi = 300)
@@ -652,6 +810,12 @@ ggsave(plot_paths[["monthly_organism_group_by_type"]], p_group_by_type_time, wid
 ggsave(plot_paths[["monthly_organism_category_by_type"]], p_category_by_type_time, width = 14, height = 12, dpi = 300)
 ggsave(plot_paths[["monthly_organism_group_five_panel"]], p_group_five_panel_time, width = 14, height = 18, dpi = 300)
 ggsave(plot_paths[["monthly_organism_category_five_panel"]], p_category_five_panel_time, width = 14, height = 18, dpi = 300)
+ggsave(plot_paths[["monthly_organism_group_overall_rate"]], p_group_overall_time_rate, width = 12, height = 8, dpi = 300)
+ggsave(plot_paths[["monthly_organism_category_overall_rate"]], p_category_overall_time_rate, width = 12, height = 8, dpi = 300)
+ggsave(plot_paths[["monthly_organism_group_by_type_rate"]], p_group_by_type_time_rate, width = 14, height = 12, dpi = 300)
+ggsave(plot_paths[["monthly_organism_category_by_type_rate"]], p_category_by_type_time_rate, width = 14, height = 12, dpi = 300)
+ggsave(plot_paths[["monthly_organism_group_five_panel_rate"]], p_group_five_panel_time_rate, width = 14, height = 18, dpi = 300)
+ggsave(plot_paths[["monthly_organism_category_five_panel_rate"]], p_category_five_panel_time_rate, width = 14, height = 18, dpi = 300)
 
 message("Positive organism rows after excluding explicit negative organism names: ", nrow(positive_rows))
 message("Excluded explicit negative organism-name rows from detected-organism summaries: ", sum(rows$positive_culture & rows$explicit_negative_name, na.rm = TRUE))
