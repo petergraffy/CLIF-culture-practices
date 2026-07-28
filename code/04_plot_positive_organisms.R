@@ -121,10 +121,6 @@ add_icu_admission_rates <- function(data, monthly_icu_admissions) {
     )
 }
 
-rolling_mean <- function(x, k = 3) {
-  as.numeric(stats::filter(x, rep(1 / k, k), sides = 2))
-}
-
 make_within_label <- function(label, facet) paste(label, facet, sep = "___")
 strip_within_label <- function(x) str_replace(x, "___.*$", "")
 
@@ -711,10 +707,6 @@ plot_top_organism_trends <- function(data, top_data, title, n = top_n_trends) {
 
   plot_data <- data %>%
     inner_join(trend_lookup, by = c("organism", "organism_label", "organism_type")) %>%
-    arrange(organism_label, culture_month) %>%
-    group_by(organism_label) %>%
-    mutate(detection_rate_rolling_3mo = rolling_mean(detection_rows_per_100_icu_admissions, 3)) %>%
-    ungroup() %>%
     mutate(
       organism_label = factor(organism_label, levels = trend_lookup$organism_label)
     )
@@ -723,10 +715,9 @@ plot_top_organism_trends <- function(data, top_data, title, n = top_n_trends) {
   plot_data <- plot_data %>%
     mutate(organism_label = factor(as.character(organism_label), levels = legend_info$breaks))
 
-  ggplot(plot_data, aes(culture_month, detection_rows_per_100_icu_admissions, color = organism_label)) +
-    geom_point(size = 0.7, alpha = 0.25) +
-    geom_line(aes(y = detection_rate_rolling_3mo), linewidth = 0.95, na.rm = TRUE) +
-    scale_color_manual(
+  ggplot(plot_data, aes(culture_month, detection_rows_per_100_icu_admissions, fill = organism_label)) +
+    geom_col(width = 25 * 24 * 60 * 60, color = "white", linewidth = 0.05) +
+    scale_fill_manual(
       values = legend_info$values,
       limits = legend_info$breaks,
       breaks = legend_info$breaks,
@@ -737,13 +728,13 @@ plot_top_organism_trends <- function(data, top_data, title, n = top_n_trends) {
     scale_y_continuous(labels = comma, limits = c(0, NA)) +
     labs(
       title = title,
-      subtitle = glue("Top {n} organisms by overall positive detection rows; lines show 3-month centered rolling means"),
+      subtitle = glue("Top {n} organisms by overall positive detection rows"),
       x = NULL,
       y = "Positive organism detections per 100 ICU admissions",
-      color = NULL
+      fill = NULL
     ) +
     stacked_time_theme +
-    guides(color = guide_legend(ncol = 3, byrow = FALSE))
+    guides(fill = guide_legend(ncol = 3, byrow = FALSE))
 }
 
 p_group_overall <- plot_overall_bar(
