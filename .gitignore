@@ -1,0 +1,27 @@
+.DS_Store
+.Rhistory
+.RData
+.Rproj.user/
+renv/library/
+renv/staging/
+
+# Sensitive or large local data
+data/raw/
+data/private/
+data/intermediate/
+*.rds
+*.Rds
+*.csv
+*.tsv
+*.parquet
+*.feather
+!config/*.csv
+
+# Generated outputs
+output/*
+!output/.gitkeep
+
+# Local configuration
+.env
+config/local*.yml
+config/local*.yaml
