@@ -97,7 +97,7 @@ make_shade_ramp <- function(base_color, n) {
 }
 
 make_organism_legend <- function(data) {
-  legend_data <- data %>%
+  legend_items <- data %>%
     mutate(
       organism_type = factor(coalesce(organism_type, "Other/unspecified"), levels = organism_type_levels),
       n_detection_rows = coalesce(n_detection_rows, 0L)
@@ -114,9 +114,41 @@ make_organism_legend <- function(data) {
         type_index == 1L,
         paste0("[", organism_type, "] ", organism_label),
         paste0("  ", organism_label)
+      ),
+      legend_column = case_when(
+        organism_type == "Gram positive bacteria" ~ 1L,
+        organism_type == "Gram negative bacteria" ~ 2L,
+        TRUE ~ 3L
       )
     ) %>%
+    ungroup() %>%
+    arrange(legend_column, organism_type, desc(total_detection_rows), organism_label) %>%
+    group_by(legend_column) %>%
+    mutate(legend_row = row_number()) %>%
     ungroup()
+
+  legend_nrow <- max(legend_items$legend_row)
+
+  legend_spacers <- tidyr::expand_grid(
+    legend_column = sort(unique(legend_items$legend_column)),
+    legend_row = seq_len(legend_nrow)
+  ) %>%
+    anti_join(
+      legend_items %>% select(legend_column, legend_row),
+      by = c("legend_column", "legend_row")
+    ) %>%
+    mutate(
+      organism_label = paste0(".legend_spacer_", legend_column, "_", legend_row),
+      organism_type = factor("Other/unspecified", levels = organism_type_levels),
+      total_detection_rows = 0L,
+      type_index = NA_integer_,
+      type_n = NA_integer_,
+      color = "#FFFFFF00",
+      legend_label = ""
+    )
+
+  legend_data <- bind_rows(legend_items, legend_spacers) %>%
+    arrange(legend_column, legend_row)
 
   list(
     values = setNames(legend_data$color, legend_data$organism_label),
@@ -393,12 +425,18 @@ plot_overall_stacked_bar <- function(data, title) {
 
   ggplot(plot_data, aes(culture_month, n_detection_rows, fill = organism_label)) +
     geom_col(width = 25 * 24 * 60 * 60, color = "white", linewidth = 0.05) +
-    scale_fill_manual(values = legend_info$values, breaks = legend_info$breaks, labels = legend_info$labels) +
+    scale_fill_manual(
+      values = legend_info$values,
+      limits = legend_info$breaks,
+      breaks = legend_info$breaks,
+      labels = legend_info$labels,
+      drop = FALSE
+    ) +
     scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
     scale_y_continuous(labels = comma) +
     labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
     stacked_time_theme +
-    guides(fill = guide_legend(ncol = 3))
+    guides(fill = guide_legend(ncol = 3, byrow = FALSE))
 }
 
 plot_faceted_stacked_bar <- function(data, title) {
@@ -415,12 +453,18 @@ plot_faceted_stacked_bar <- function(data, title) {
   ggplot(plot_data, aes(culture_month, n_detection_rows, fill = organism_label)) +
     geom_col(width = 25 * 24 * 60 * 60, color = "white", linewidth = 0.05) +
     facet_wrap(vars(culture_type), scales = "free_y", ncol = 2) +
-    scale_fill_manual(values = legend_info$values, breaks = legend_info$breaks, labels = legend_info$labels) +
+    scale_fill_manual(
+      values = legend_info$values,
+      limits = legend_info$breaks,
+      breaks = legend_info$breaks,
+      labels = legend_info$labels,
+      drop = FALSE
+    ) +
     scale_x_datetime(date_breaks = "2 years", date_labels = "%Y") +
     scale_y_continuous(labels = comma) +
     labs(title = title, x = NULL, y = "Positive organism detection rows", fill = NULL) +
     stacked_time_theme +
-    guides(fill = guide_legend(ncol = 3))
+    guides(fill = guide_legend(ncol = 3, byrow = FALSE))
 }
 
 p_group_overall <- plot_overall_bar(
