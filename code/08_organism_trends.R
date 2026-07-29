@@ -13,9 +13,9 @@
 #   then counted monthly.
 #
 # Note:
-#   True MRSA/VRE/CRE phenotypes require susceptibility/resistance fields. This script detects those
-#   labels only when resistance terms are present in organism text, and otherwise reports organism
-#   proxies such as Staphylococcus aureus.
+#   When CLIF microbiology_susceptibility is available, MRSA/VRE/CRE phenotypes are derived from
+#   resistant antimicrobial susceptibility results. When it is unavailable, target labels fall back
+#   to explicit organism text only and the aggregate source summary records that limitation.
 # ================================================================================================
 
 suppressPackageStartupMessages({
@@ -70,6 +70,21 @@ drop_negative_organism_name <- function(x) {
 
 rolling_mean_trailing <- function(x, k = 6) {
   as.numeric(stats::filter(x, rep(1 / k, k), sides = 1))
+}
+
+first_existing_col <- function(data, candidates) {
+  hit <- candidates[candidates %in% names(data)]
+  if (length(hit) == 0) NA_character_ else hit[[1]]
+}
+
+normalise_sir <- function(x) {
+  x_clean <- str_to_lower(str_trim(as.character(x)))
+  case_when(
+    x_clean %in% c("r", "resistant", "res") ~ "resistant",
+    x_clean %in% c("i", "intermediate", "intermediate/resistant", "non-susceptible", "nonsusceptible") ~ "intermediate",
+    x_clean %in% c("s", "susceptible", "sus") ~ "susceptible",
+    TRUE ~ x_clean
+  )
 }
 
 classify_organism_type <- function(x) {
@@ -190,12 +205,12 @@ build_monthly_icu_denominators <- function(month_seq, study_start_dttm, study_en
 
 target_organism_patterns <- tibble::tribble(
   ~target_label, ~pattern,
-  "MRSA text label", "mrsa|methicillin[ _-]*resistant.*staph|staph.*methicillin[ _-]*resistant",
+  "MRSA", "mrsa|methicillin[ _-]*resistant.*staph|staph.*methicillin[ _-]*resistant",
   "Staphylococcus aureus", "staphylococcus[_ ]aureus",
-  "VRE text label", "\\bvre\\b|vancomycin[ _-]*resistant.*enterococcus|enterococcus.*vancomycin[ _-]*resistant",
+  "VRE", "\\bvre\\b|vancomycin[ _-]*resistant.*enterococcus|enterococcus.*vancomycin[ _-]*resistant",
   "Enterococcus faecium", "enterococcus[_ ]faecium",
-  "ESBL text label", "\\besbl\\b|extended[ _-]*spectrum",
-  "CRE text label", "\\bcre\\b|carbapenem[ _-]*resistant|\\bkpc\\b|\\bndm\\b",
+  "ESBL", "\\besbl\\b|extended[ _-]*spectrum",
+  "CRE", "\\bcre\\b|carbapenem[ _-]*resistant|\\bkpc\\b|\\bndm\\b",
   "Pseudomonas aeruginosa", "pseudomonas[_ ]aeruginosa",
   "Klebsiella pneumoniae", "klebsiella[_ ]pneumoniae",
   "Escherichia coli", "escherichia[_ ]coli|\\be[._ ]?coli\\b",
@@ -205,6 +220,97 @@ target_organism_patterns <- tibble::tribble(
   mutate(
     organism_type = factor(classify_organism_type(target_label), levels = organism_type_levels)
 )
+
+read_susceptibility_table <- function() {
+  path <- find_table_path("microbiology_susceptibility", required = FALSE)
+  if (is.na(path)) {
+    message("CLIF microbiology_susceptibility table not found; target resistance phenotypes will use organism text fallback only.")
+    return(NULL)
+  }
+
+  message("Reading CLIF microbiology_susceptibility: ", path)
+  read_tbl("microbiology_susceptibility")
+}
+
+build_susceptibility_phenotypes <- function(rows) {
+  susceptibility <- read_susceptibility_table()
+  if (is.null(susceptibility) || nrow(susceptibility) == 0) {
+    return(tibble(
+      target_label = character(),
+      detection_event_id = character(),
+      calendar_month = as.POSIXct(character()),
+      phenotype_source = character()
+    ))
+  }
+
+  organism_id_col <- first_existing_col(susceptibility, c("organism_id", "microbiology_organism_id"))
+  antimicrobial_col <- first_existing_col(
+    susceptibility,
+    c("antimicrobial_name", "antimicrobial_category", "antibiotic_name", "antibiotic", "drug_name", "susceptibility_name")
+  )
+  interpretation_col <- first_existing_col(
+    susceptibility,
+    c("susceptibility_interpretation", "interpretation", "susceptibility_result", "result", "result_category")
+  )
+
+  if (is.na(organism_id_col) || is.na(antimicrobial_col) || is.na(interpretation_col)) {
+    warning(
+      "microbiology_susceptibility is present but missing expected columns. Found columns: ",
+      paste(names(susceptibility), collapse = ", "),
+      ". Expected organism_id plus antimicrobial and interpretation/result fields."
+    )
+    return(tibble(
+      target_label = character(),
+      detection_event_id = character(),
+      calendar_month = as.POSIXct(character()),
+      phenotype_source = character()
+    ))
+  }
+
+  susceptibility_resistant <- susceptibility %>%
+    transmute(
+      organism_id = as.character(.data[[organism_id_col]]),
+      antimicrobial = str_to_lower(str_trim(as.character(.data[[antimicrobial_col]]))),
+      interpretation = normalise_sir(.data[[interpretation_col]])
+    ) %>%
+    filter(!is.na(organism_id), nzchar(organism_id), interpretation == "resistant")
+
+  if (nrow(susceptibility_resistant) == 0) {
+    return(tibble(
+      target_label = character(),
+      detection_event_id = character(),
+      calendar_month = as.POSIXct(character()),
+      phenotype_source = character()
+    ))
+  }
+
+  rows_for_ast <- rows %>%
+    mutate(organism_id = as.character(organism_id)) %>%
+    filter(!is.na(organism_id), nzchar(organism_id)) %>%
+    select(detection_event_id, calendar_month, organism_id, organism_text, organism_name, organism_category, organism_group)
+
+  rows_for_ast %>%
+    inner_join(susceptibility_resistant, by = "organism_id", relationship = "many-to-many") %>%
+    mutate(
+      target_label = case_when(
+        str_detect(organism_text, "staphylococcus[_ ]aureus") &
+          str_detect(antimicrobial, "oxacillin|cefoxitin|methicillin") ~ "MRSA",
+        str_detect(organism_text, "enterococcus") &
+          str_detect(antimicrobial, "vancomycin") ~ "VRE",
+        str_detect(organism_text, "escherichia|klebsiella|enterobacter|citrobacter|serratia|proteus") &
+          str_detect(antimicrobial, "ertapenem|imipenem|meropenem|doripenem") ~ "CRE",
+        TRUE ~ NA_character_
+      )
+    ) %>%
+    filter(!is.na(target_label)) %>%
+    transmute(
+      target_label,
+      detection_event_id,
+      calendar_month,
+      phenotype_source = "susceptibility"
+    ) %>%
+    distinct()
+}
 
 fit_poisson_trend <- function(data, denominator_var) {
   model_data <- data %>%
@@ -298,6 +404,7 @@ rows <- readr::read_csv(row_path, show_col_types = FALSE) %>%
     calendar_month = floor_date(collect_dttm, "month"),
     fluid_name = coalesce(na_if(fluid_name, ""), "missing"),
     method_name = coalesce(na_if(method_name, ""), "missing"),
+    organism_id = as.character(organism_id),
     organism_group = coalesce(na_if(str_to_lower(str_trim(as.character(organism_group))), ""), "missing"),
     organism_category = coalesce(na_if(str_to_lower(str_trim(as.character(organism_category))), ""), organism_group),
     organism_name = coalesce(na_if(str_to_lower(str_trim(as.character(organism_name))), ""), organism_category),
@@ -340,16 +447,39 @@ top_monthly_rates <- rows %>%
   make_monthly_rates("organism_category_label", month_seq, monthly_icu_denominators) %>%
   left_join(top_organism_labels, by = c("organism_label" = "organism_category_label"))
 
-target_detections <- target_organism_patterns %>%
+target_text_detections <- target_organism_patterns %>%
   tidyr::crossing(row_id = seq_len(nrow(rows))) %>%
   mutate(row_match = str_detect(rows$organism_text[row_id], regex(pattern, ignore_case = TRUE))) %>%
   filter(row_match) %>%
   transmute(
     target_label,
     detection_event_id = rows$detection_event_id[row_id],
-    calendar_month = rows$calendar_month[row_id]
+    calendar_month = rows$calendar_month[row_id],
+    phenotype_source = "organism_text"
   ) %>%
   distinct()
+
+target_susceptibility_detections <- build_susceptibility_phenotypes(rows)
+
+target_detections <- bind_rows(
+  target_susceptibility_detections,
+  target_text_detections
+) %>%
+  arrange(
+    target_label,
+    detection_event_id,
+    desc(phenotype_source == "susceptibility")
+  ) %>%
+  distinct(target_label, detection_event_id, calendar_month, .keep_all = TRUE)
+
+target_detection_source_summary <- target_detections %>%
+  count(target_label, phenotype_source, name = "n_detection_events") %>%
+  complete(
+    target_label = target_organism_patterns$target_label,
+    phenotype_source = c("susceptibility", "organism_text"),
+    fill = list(n_detection_events = 0L)
+  ) %>%
+  arrange(target_label, phenotype_source)
 
 target_monthly_rates <- if (nrow(target_detections) > 0) {
   make_monthly_rates(target_detections, "target_label", month_seq, monthly_icu_denominators) %>%
@@ -436,7 +566,7 @@ increasing_labels <- trend_summary_top_admissions %>%
 target_plot_labels <- target_monthly_rates %>%
   group_by(organism_label) %>%
   summarise(total_detection_events = max(total_detection_events, na.rm = TRUE), .groups = "drop") %>%
-  filter(total_detection_events > 0 | organism_label %in% c("MRSA text label", "Staphylococcus aureus")) %>%
+  filter(total_detection_events > 0 | organism_label %in% c("MRSA", "Staphylococcus aureus")) %>%
   arrange(desc(total_detection_events), organism_label) %>%
   pull(organism_label)
 
@@ -505,6 +635,7 @@ paths <- c(
   trend_summary_top_icu_days = file.path(out_dir, glue("organism_detection_trend_screen_top_per_100_icu_days_{site_name}_{stamp}.csv")),
   trend_summary_targets_admissions = file.path(out_dir, glue("organism_detection_trend_screen_targets_per_100_icu_admissions_{site_name}_{stamp}.csv")),
   trend_summary_targets_icu_days = file.path(out_dir, glue("organism_detection_trend_screen_targets_per_100_icu_days_{site_name}_{stamp}.csv")),
+  target_detection_source_summary = file.path(out_dir, glue("target_resistance_detection_source_summary_{site_name}_{stamp}.csv")),
   monthly_top_rates = file.path(out_dir, glue("monthly_top_organism_detection_rates_{site_name}_{stamp}.csv")),
   monthly_target_rates = file.path(out_dir, glue("monthly_target_organism_detection_rates_{site_name}_{stamp}.csv")),
   monthly_icu_denominators = file.path(out_dir, glue("monthly_icu_denominators_for_organism_trends_{site_name}_{stamp}.csv")),
@@ -518,6 +649,7 @@ write_csv(trend_summary_top_admissions, paths[["trend_summary_top_admissions"]])
 write_csv(trend_summary_top_icu_days, paths[["trend_summary_top_icu_days"]])
 write_csv(trend_summary_targets_admissions, paths[["trend_summary_targets_admissions"]])
 write_csv(trend_summary_targets_icu_days, paths[["trend_summary_targets_icu_days"]])
+write_csv(target_detection_source_summary, paths[["target_detection_source_summary"]])
 write_csv(top_monthly_rates, paths[["monthly_top_rates"]])
 write_csv(target_monthly_rates, paths[["monthly_target_rates"]])
 write_csv(monthly_icu_denominators, paths[["monthly_icu_denominators"]])
@@ -558,6 +690,7 @@ print(paths[c(
   "trend_summary_top_icu_days",
   "trend_summary_targets_admissions",
   "trend_summary_targets_icu_days",
+  "target_detection_source_summary",
   "monthly_top_rates",
   "monthly_target_rates"
 )])
