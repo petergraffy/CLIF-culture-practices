@@ -96,6 +96,16 @@ TOP_N_CULTURE_TYPES=8 TOP_N_ORGANISMS_PER_TYPE=10 PLOT_END_DATE=2024-12-31 Rscri
 
 If `ICU_CULTURE_ROWS_PATH` is not set, the script reads the latest private culture row file from `data/intermediate/cohort/`. It writes aggregate positive organism summaries and PNG figures under `output/organisms/`.
 
+## Organism Trend Screen
+
+After cohort identification, run:
+
+```sh
+ICU_CULTURE_ROWS_PATH=data/intermediate/cohort/icu_culture_rows_UCMC_YYYYMMDD_HHMMSS.csv Rscript code/08_organism_trends.R
+```
+
+This screens top organisms and targeted organism/resistance text labels for monthly detection-rate trends per 100 ICU admissions. True MRSA, VRE, ESBL, and CRE phenotypes require susceptibility or resistance fields; this script only identifies those labels when resistance terms appear in organism text.
+
 ## Recommended Multi-Site Run
 
 For each site, set `CLIF_SITE_NAME`, `CLIF_TABLES_PATH`, and the study window, then run the aggregate-producing scripts:
@@ -105,6 +115,7 @@ STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2024-12-31 Rscript code/01_identify_i
 STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2024-12-31 Rscript code/05_culture_rates_per_icu_admission.R
 STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2024-12-31 Rscript code/06_icu_day_denominators_and_timing.R
 PLOT_START_DATE=2018-01-01 PLOT_END_DATE=2024-12-31 Rscript code/04_plot_positive_organisms.R
+STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2024-12-31 Rscript code/08_organism_trends.R
 Rscript code/07_prepare_site_exports.R
 ```
 
