@@ -50,6 +50,13 @@ clean_label <- function(x) {
     str_to_sentence()
 }
 
+drop_negative_organism_name <- function(x) {
+  str_detect(
+    coalesce(x, ""),
+    regex("^(no|none|not) .*isolated|no growth|no .* detected|negative for", ignore_case = TRUE)
+  )
+}
+
 clip_ts <- function(x, lower = as.POSIXct(NA), upper = as.POSIXct(NA)) {
   if (!is.na(lower)) x <- pmax(x, lower)
   if (!is.na(upper)) x <- pmin(x, upper)
@@ -65,6 +72,7 @@ study_end_date <- Sys.getenv("STUDY_END_DATE", unset = Sys.getenv("PLOT_END_DATE
 top_n_types <- as.integer(Sys.getenv("TOP_N_CULTURE_TYPES", unset = "8"))
 timing_max_day <- as.integer(Sys.getenv("TIMING_MAX_ICU_DAY", unset = "14"))
 timing_max_hour <- as.integer(Sys.getenv("TIMING_MAX_ICU_HOUR", unset = "168"))
+top_n_organisms <- as.integer(Sys.getenv("TOP_N_TIMING_ORGANISMS", unset = "10"))
 
 study_start_dttm <- if (!is.na(study_start_date) && nzchar(study_start_date)) safe_ts(study_start_date) else as.POSIXct(NA)
 study_end_dttm <- if (!is.na(study_end_date) && nzchar(study_end_date)) safe_ts(study_end_date) + days(1) - seconds(1) else as.POSIXct(NA)
@@ -149,10 +157,16 @@ microbiology_culture <- read_tbl("microbiology_culture") %>%
       str_to_lower(str_trim(as.character(organism_group)))
     } else {
       NA_character_
+    },
+    organism_name = if ("organism_name" %in% names(.)) {
+      str_to_lower(str_trim(as.character(organism_name)))
+    } else {
+      NA_character_
     }
   ) %>%
   mutate(
     organism_group = coalesce(na_if(organism_group, ""), organism_category),
+    organism_name = coalesce(na_if(organism_name, ""), organism_group),
     no_growth = organism_group %in% c("no_growth", "no growth"),
     positive_culture = !is.na(organism_group) & !no_growth
   ) %>%
@@ -385,6 +399,69 @@ cumulative_culture_events_by_type_hour <- icu_culture_events %>%
   ) %>%
   arrange(specimen_type, icu_hour)
 
+positive_organism_detections <- icu_culture_rows %>%
+  mutate(
+    organism_name = coalesce(na_if(organism_name, ""), organism_group, organism_category),
+    organism_label = str_to_sentence(str_squish(organism_name)),
+    explicit_negative_name = drop_negative_organism_name(organism_name),
+    hours_since_icu_admit = as.numeric(difftime(collect_dttm, icu_in_dttm, units = "hours"))
+  ) %>%
+  filter(positive_culture, !explicit_negative_name, !is.na(organism_name), !is.na(hours_since_icu_admit)) %>%
+  distinct(
+    patient_id,
+    hospitalization_id,
+    icu_admission_id,
+    collect_dttm,
+    fluid_name,
+    fluid_category,
+    method_name,
+    organism_name,
+    organism_label,
+    hours_since_icu_admit
+  )
+
+top_organisms <- positive_organism_detections %>%
+  count(organism_name, organism_label, sort = TRUE) %>%
+  slice_head(n = top_n_organisms)
+
+first_organism_detection_by_admission <- positive_organism_detections %>%
+  inner_join(
+    top_organisms %>% select(organism_name, organism_label),
+    by = c("organism_name", "organism_label")
+  ) %>%
+  group_by(icu_admission_id, organism_name, organism_label) %>%
+  summarise(
+    first_detection_hours = min(hours_since_icu_admit, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cumulative_top_organism_incidence_hour <- top_organisms %>%
+  select(organism_name, organism_label, n_total_detection_events = n) %>%
+  crossing(icu_hour = 0:timing_max_hour) %>%
+  left_join(
+    first_organism_detection_by_admission %>%
+      mutate(first_detection_hour = ceiling(first_detection_hours)) %>%
+      filter(first_detection_hour >= 0, first_detection_hour <= timing_max_hour) %>%
+      count(organism_name, organism_label, first_detection_hour, name = "n_first_detection_icu_admissions") %>%
+      group_by(organism_name, organism_label) %>%
+      complete(first_detection_hour = 0:timing_max_hour, fill = list(n_first_detection_icu_admissions = 0L)) %>%
+      arrange(organism_name, organism_label, first_detection_hour) %>%
+      mutate(n_icu_admissions_with_organism_by_hour = cumsum(n_first_detection_icu_admissions)) %>%
+      ungroup(),
+    by = c("organism_name", "organism_label", "icu_hour" = "first_detection_hour")
+  ) %>%
+  mutate(
+    n_first_detection_icu_admissions = coalesce(n_first_detection_icu_admissions, 0L),
+    n_icu_admissions_with_organism_by_hour = coalesce(n_icu_admissions_with_organism_by_hour, 0L),
+    n_icu_admissions = nrow(icu_admissions),
+    site_name = site_name,
+    care_setting = "ICU",
+    organism_first_collected_per_100_icu_admissions =
+      100 * n_icu_admissions_with_organism_by_hour / n_icu_admissions,
+    organism_label = fct_reorder(organism_label, n_total_detection_events, .desc = TRUE)
+  ) %>%
+  arrange(organism_label, icu_hour)
+
 culture_type_palette <- c(
   "Blood buffy" = "#4C78A8",
   "Respiratory tract" = "#F58518",
@@ -514,6 +591,31 @@ p_cumulative_events_by_type <- ggplot(
   plot_theme +
   guides(color = guide_legend(ncol = 4, byrow = FALSE))
 
+organism_palette <- setNames(
+  hue_pal()(nrow(top_organisms)),
+  top_organisms$organism_label
+)
+
+p_cumulative_top_organism_incidence <- ggplot(
+  cumulative_top_organism_incidence_hour,
+  aes(icu_hour, organism_first_collected_per_100_icu_admissions, color = organism_label)
+) +
+  geom_line(linewidth = 0.85) +
+  scale_x_continuous(
+    breaks = seq(0, timing_max_hour, by = 24),
+    labels = function(x) x / 24
+  ) +
+  scale_y_continuous(labels = comma, limits = c(0, NA)) +
+  labs(
+    title = "Cumulative Incidence of Top Organism Collection",
+    x = "Days since ICU admission",
+    y = "ICU admissions per 100",
+    color = NULL
+  ) +
+  plot_theme +
+  guides(color = guide_legend(ncol = 2, byrow = TRUE, label.theme = element_text(size = 9))) +
+  scale_color_manual(values = organism_palette, labels = label_wrap(42))
+
 out_dir <- file.path("output", "icu_day_timing")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
@@ -527,11 +629,13 @@ paths <- c(
   icu_day_event_rates = file.path(out_dir, glue("icu_day_culture_event_rates_{site_name}_{stamp}.csv")),
   cumulative_first_culture_by_day = file.path(out_dir, glue("cumulative_first_culture_by_icu_day_{site_name}_{stamp}.csv")),
   cumulative_culture_events_by_type_hour = file.path(out_dir, glue("cumulative_culture_events_by_type_icu_hour_{site_name}_{stamp}.csv")),
+  cumulative_top_organism_incidence_hour = file.path(out_dir, glue("cumulative_top_organism_incidence_icu_hour_{site_name}_{stamp}.csv")),
   monthly_type_rate_plot = file.path(out_dir, glue("monthly_specimen_type_culture_rates_stacked_per_100_icu_days_{site_name}_{stamp}.png")),
   first_culture_timing_plot = file.path(out_dir, glue("first_culture_timing_by_specimen_type_{site_name}_{stamp}.png")),
   cumulative_first_culture_plot = file.path(out_dir, glue("cumulative_first_culture_by_icu_day_{site_name}_{stamp}.png")),
   icu_day_event_rate_plot = file.path(out_dir, glue("icu_day_culture_event_rates_per_100_icu_admissions_at_risk_{site_name}_{stamp}.png")),
-  cumulative_events_by_type_plot = file.path(out_dir, glue("cumulative_culture_events_by_type_icu_hour_{site_name}_{stamp}.png"))
+  cumulative_events_by_type_plot = file.path(out_dir, glue("cumulative_culture_events_by_type_icu_hour_{site_name}_{stamp}.png")),
+  cumulative_top_organism_incidence_plot = file.path(out_dir, glue("cumulative_top_organism_incidence_icu_hour_{site_name}_{stamp}.png"))
 )
 
 write_csv(monthly_icu_days, paths[["monthly_icu_days"]])
@@ -542,12 +646,14 @@ write_csv(timing_bin_summary, paths[["first_culture_timing_bins"]])
 write_csv(icu_day_event_rates, paths[["icu_day_event_rates"]])
 write_csv(cumulative_first_culture_by_day, paths[["cumulative_first_culture_by_day"]])
 write_csv(cumulative_culture_events_by_type_hour, paths[["cumulative_culture_events_by_type_hour"]])
+write_csv(cumulative_top_organism_incidence_hour, paths[["cumulative_top_organism_incidence_hour"]])
 
 ggsave(paths[["monthly_type_rate_plot"]], p_icu_day_rate_stacked, width = 12, height = 7, dpi = 300)
 ggsave(paths[["first_culture_timing_plot"]], p_timing_bins, width = 10, height = 7, dpi = 300)
 ggsave(paths[["cumulative_first_culture_plot"]], p_cumulative_first_culture, width = 10, height = 6, dpi = 300)
 ggsave(paths[["icu_day_event_rate_plot"]], p_icu_day_event_rates, width = 10, height = 6, dpi = 300)
 ggsave(paths[["cumulative_events_by_type_plot"]], p_cumulative_events_by_type, width = 11, height = 7, dpi = 300)
+ggsave(paths[["cumulative_top_organism_incidence_plot"]], p_cumulative_top_organism_incidence, width = 11, height = 7, dpi = 300)
 
 message("ICU-day denominator summary:")
 print(monthly_icu_days %>% summarise(
@@ -582,6 +688,10 @@ print(first_culture_timing %>% summarise(
 message("")
 message("Specimen types displayed separately:")
 print(tibble(specimen_type = top_types), n = Inf)
+
+message("")
+message("Top organisms displayed separately:")
+print(top_organisms, n = Inf)
 
 message("")
 message("Wrote outputs:")
