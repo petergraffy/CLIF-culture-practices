@@ -62,41 +62,27 @@ five_panel_levels <- c(
   "Other"
 )
 
-weighted_time_density <- function(data, panel_var, month_var = "culture_month", weight_var = "n_events", bandwidth_days = 180) {
+monthly_event_density <- function(data, panel_var, count_var = "n_events") {
   data %>%
     group_by(.data[[panel_var]]) %>%
-    group_modify(function(.x, .y) {
-      density_input <- .x %>%
-        filter(!is.na(.data[[month_var]]), .data[[weight_var]] > 0)
-
-      if (nrow(density_input) < 2 || sum(density_input[[weight_var]], na.rm = TRUE) <= 0) {
-        return(tibble())
-      }
-
-      density_fit <- stats::density(
-        as.numeric(density_input[[month_var]]),
-        weights = density_input[[weight_var]] / sum(density_input[[weight_var]]),
-        from = min(as.numeric(data[[month_var]]), na.rm = TRUE),
-        to = max(as.numeric(data[[month_var]]), na.rm = TRUE),
-        bw = bandwidth_days * 24 * 60 * 60,
-        n = 512,
-        na.rm = TRUE
-      )
-
-      tibble(
-        culture_month = as.POSIXct(density_fit$x, origin = "1970-01-01", tz = "UTC"),
-        total_event_density = density_fit$y,
-        relative_total_event_density = density_fit$y / max(density_fit$y, na.rm = TRUE)
-      )
-    }) %>%
-    ungroup()
+    mutate(
+      max_monthly_events = max(.data[[count_var]], na.rm = TRUE),
+      relative_total_event_density = if_else(max_monthly_events > 0, .data[[count_var]] / max_monthly_events, NA_real_)
+    ) %>%
+    ungroup() %>%
+    transmute(
+      culture_panel = .data[[panel_var]],
+      culture_month,
+      n_events = .data[[count_var]],
+      max_monthly_events,
+      relative_total_event_density
+    )
 }
 
 site_name <- Sys.getenv("CLIF_SITE_NAME", unset = "SITE")
 event_path <- Sys.getenv("ICU_CULTURE_EVENTS_PATH", unset = NA_character_)
 top_n_types <- as.integer(Sys.getenv("TOP_N_CULTURE_TYPES", unset = "8"))
 top_n_positivity_types <- as.integer(Sys.getenv("TOP_N_POSITIVITY_FLUID_CATEGORIES", unset = as.character(top_n_types)))
-density_bandwidth_days <- as.numeric(Sys.getenv("TOTAL_EVENT_DENSITY_BANDWIDTH_DAYS", unset = "180"))
 plot_start_date <- Sys.getenv("PLOT_START_DATE", unset = NA_character_)
 plot_end_date <- Sys.getenv("PLOT_END_DATE", unset = NA_character_)
 
@@ -242,11 +228,7 @@ monthly_positivity_five_panel <- bind_rows(
     positive_event_rate = if_else(n_events > 0, n_positive_events / n_events, NA_real_)
   )
 
-five_panel_total_event_density <- weighted_time_density(
-  monthly_positivity_five_panel,
-  "culture_panel",
-  bandwidth_days = density_bandwidth_days
-)
+five_panel_total_event_density <- monthly_event_density(monthly_positivity_five_panel, "culture_panel")
 
 out_dir <- file.path("output", "time_series")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
@@ -441,7 +423,8 @@ p_five_panel_positive_rate_density <- ggplot() +
     data = five_panel_total_event_density,
     aes(culture_month, relative_total_event_density),
     color = "#4A4A4A",
-    linewidth = 0.75
+    linewidth = 0.75,
+    lineend = "round"
   ) +
   facet_grid(rows = vars(culture_panel)) +
   scale_fill_manual(values = five_panel_palette) +
