@@ -264,7 +264,7 @@ plot_theme <- theme_classic(base_size = 12) +
   )
 month_bar_width <- 25 * 24 * 60 * 60
 culture_type_palette <- c(
-  "Blood buffy" = "#FFFFB3",
+  "Blood buffy" = "#BC80BD",
   "Respiratory tract" = "#8DD3C7",
   "Genito urinary tract" = "#BEBADA",
   "Meninges csf" = "#FB8072",
