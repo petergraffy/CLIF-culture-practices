@@ -302,6 +302,27 @@ p_fluid_category_positivity_facets <- monthly_positivity_by_fluid_category %>%
   plot_theme +
   guides(size = guide_legend(nrow = 1))
 
+fluid_category_positivity_levels <- levels(monthly_positivity_by_fluid_category$fluid_category_label)
+fluid_category_positivity_palette <- culture_type_palette[
+  names(culture_type_palette) %in% fluid_category_positivity_levels
+]
+
+p_fluid_category_positivity_overlay <- monthly_positivity_by_fluid_category %>%
+  filter(n_events > 0) %>%
+  ggplot(aes(culture_month, positive_event_rate, color = fluid_category_label)) +
+  geom_line(linewidth = 0.75) +
+  scale_color_manual(values = fluid_category_positivity_palette) +
+  scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
+  labs(
+    title = "Monthly Positive Culture Event Rate by Fluid Category",
+    x = NULL,
+    y = "Positive culture events",
+    color = NULL
+  ) +
+  plot_theme +
+  guides(color = guide_legend(ncol = 4, byrow = TRUE))
+
 p_type_facets <- monthly_by_type %>%
   filter(culture_type != "Other") %>%
   ggplot(aes(culture_month, n_events)) +
@@ -324,6 +345,7 @@ plot_paths <- c(
   type_stacked_volume = file.path(out_dir, glue("monthly_culture_volume_stacked_by_type_{site_name}_{stamp}.png")),
   type_positivity = file.path(out_dir, glue("monthly_culture_positivity_by_type_{site_name}_{stamp}.png")),
   fluid_category_positivity_facets = file.path(out_dir, glue("monthly_positive_culture_event_rate_by_fluid_category_{site_name}_{stamp}.png")),
+  fluid_category_positivity_overlay = file.path(out_dir, glue("monthly_positive_culture_event_rate_by_fluid_category_overlay_{site_name}_{stamp}.png")),
   type_facets = file.path(out_dir, glue("monthly_culture_volume_major_type_facets_{site_name}_{stamp}.png"))
 )
 
@@ -333,6 +355,7 @@ ggsave(plot_paths[["type_volume"]], p_type_volume, width = 11, height = 6, dpi =
 ggsave(plot_paths[["type_stacked_volume"]], p_type_stacked_volume, width = 11, height = 6.5, dpi = 300)
 ggsave(plot_paths[["type_positivity"]], p_type_positivity, width = 11, height = 6, dpi = 300)
 ggsave(plot_paths[["fluid_category_positivity_facets"]], p_fluid_category_positivity_facets, width = 12, height = 12, dpi = 300)
+ggsave(plot_paths[["fluid_category_positivity_overlay"]], p_fluid_category_positivity_overlay, width = 11, height = 6.5, dpi = 300)
 ggsave(plot_paths[["type_facets"]], p_type_facets, width = 11, height = 9, dpi = 300)
 
 message("Monthly overall summary:")
