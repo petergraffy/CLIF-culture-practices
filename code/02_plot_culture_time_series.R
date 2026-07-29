@@ -275,7 +275,7 @@ culture_type_palette <- c(
   "Other" = "#9D9D9D"
 )
 five_panel_palette <- c(
-  "Overall" = "#2F6C99",
+  "Overall" = "#333333",
   "Blood buffy" = culture_type_palette[["Blood buffy"]],
   "Genito urinary tract" = culture_type_palette[["Genito urinary tract"]],
   "Respiratory tract" = culture_type_palette[["Respiratory tract"]],
