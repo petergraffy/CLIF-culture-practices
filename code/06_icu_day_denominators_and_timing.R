@@ -475,21 +475,24 @@ cumulative_top_organism_incidence_hour <- top_organisms %>%
   arrange(organism_label, icu_hour)
 
 culture_type_palette <- c(
-  "Blood buffy" = "#E41A1C",
-  "Respiratory tract" = "#377EB8",
-  "Genito urinary tract" = "#4DAF4A",
-  "Meninges csf" = "#984EA3",
-  "Pleural cavity fluid" = "#FFFF33",
-  "Respiratory tract lower" = "#A65628",
-  "Woundsite" = "#F781BF",
-  "Catheter tip" = "#FF7F00",
-  "Other" = "#999999",
+  "Blood buffy" = "#FFFFB3",
+  "Respiratory tract" = "#FCCDE5",
+  "Genito urinary tract" = "#D9D9D9",
+  "Meninges csf" = "#FFED6F",
+  "Pleural cavity fluid" = "#E7E7E7",
+  "Respiratory tract lower" = "#F3C1D8",
+  "Woundsite" = "#D8CE74",
+  "Catheter tip" = "#F7F2C0",
+  "Other" = "#BDBDBD",
   "No ICU culture" = "#C7C7C7"
 )
 specimen_levels <- levels(monthly_events_by_type_per_icu_day$specimen_type)
 extra_specimen_types <- setdiff(specimen_levels, names(culture_type_palette))
 extra_palette <- if (length(extra_specimen_types) > 0) {
-  setNames(hue_pal()(length(extra_specimen_types)), extra_specimen_types)
+  setNames(
+    grDevices::colorRampPalette(c("#FFFFB3", "#FCCDE5", "#D9D9D9", "#FFED6F"))(length(extra_specimen_types)),
+    extra_specimen_types
+  )
 } else {
   character()
 }

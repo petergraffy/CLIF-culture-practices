@@ -264,15 +264,15 @@ plot_theme <- theme_classic(base_size = 12) +
   )
 month_bar_width <- 25 * 24 * 60 * 60
 culture_type_palette <- c(
-  "Blood buffy" = "#E41A1C",
-  "Respiratory tract" = "#377EB8",
-  "Genito urinary tract" = "#4DAF4A",
-  "Meninges csf" = "#984EA3",
-  "Other unspecified" = "#FF7F00",
-  "Pleural cavity fluid" = "#FFFF33",
-  "Respiratory tract lower" = "#A65628",
-  "Woundsite" = "#F781BF",
-  "Other" = "#999999"
+  "Blood buffy" = "#FFFFB3",
+  "Respiratory tract" = "#FCCDE5",
+  "Genito urinary tract" = "#D9D9D9",
+  "Meninges csf" = "#FFED6F",
+  "Other unspecified" = "#F7F2C0",
+  "Pleural cavity fluid" = "#E7E7E7",
+  "Respiratory tract lower" = "#F3C1D8",
+  "Woundsite" = "#D8CE74",
+  "Other" = "#BDBDBD"
 )
 five_panel_palette <- c(
   "Overall" = "#333333",

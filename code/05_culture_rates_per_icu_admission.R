@@ -292,20 +292,23 @@ monthly_result_status_rates <- icu_culture_events %>%
   arrange(calendar_month, culture_result)
 
 culture_type_palette <- c(
-  "Blood buffy" = "#E41A1C",
-  "Respiratory tract" = "#377EB8",
-  "Genito urinary tract" = "#4DAF4A",
-  "Meninges csf" = "#984EA3",
-  "Pleural cavity fluid" = "#FFFF33",
-  "Respiratory tract lower" = "#A65628",
-  "Woundsite" = "#F781BF",
-  "Catheter tip" = "#FF7F00",
-  "Other" = "#999999"
+  "Blood buffy" = "#FFFFB3",
+  "Respiratory tract" = "#FCCDE5",
+  "Genito urinary tract" = "#D9D9D9",
+  "Meninges csf" = "#FFED6F",
+  "Pleural cavity fluid" = "#E7E7E7",
+  "Respiratory tract lower" = "#F3C1D8",
+  "Woundsite" = "#D8CE74",
+  "Catheter tip" = "#F7F2C0",
+  "Other" = "#BDBDBD"
 )
 specimen_type_levels <- levels(monthly_culture_events_by_type$specimen_type)
 extra_specimen_types <- setdiff(specimen_type_levels, names(culture_type_palette))
 extra_palette <- if (length(extra_specimen_types) > 0) {
-  setNames(hue_pal()(length(extra_specimen_types)), extra_specimen_types)
+  setNames(
+    grDevices::colorRampPalette(c("#FFFFB3", "#FCCDE5", "#D9D9D9", "#FFED6F"))(length(extra_specimen_types)),
+    extra_specimen_types
+  )
 } else {
   character()
 }
