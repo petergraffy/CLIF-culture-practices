@@ -45,10 +45,58 @@ clean_label <- function(x) {
     str_to_sentence()
 }
 
+collapse_culture_panel <- function(x) {
+  case_when(
+    x == "Blood buffy" ~ "Blood buffy",
+    x == "Genito urinary tract" ~ "Genito urinary tract",
+    x == "Respiratory tract" ~ "Respiratory tract",
+    TRUE ~ "Other"
+  )
+}
+
+five_panel_levels <- c(
+  "Overall",
+  "Blood buffy",
+  "Genito urinary tract",
+  "Respiratory tract",
+  "Other"
+)
+
+weighted_time_density <- function(data, panel_var, month_var = "culture_month", weight_var = "n_events", bandwidth_days = 180) {
+  data %>%
+    group_by(.data[[panel_var]]) %>%
+    group_modify(function(.x, .y) {
+      density_input <- .x %>%
+        filter(!is.na(.data[[month_var]]), .data[[weight_var]] > 0)
+
+      if (nrow(density_input) < 2 || sum(density_input[[weight_var]], na.rm = TRUE) <= 0) {
+        return(tibble())
+      }
+
+      density_fit <- stats::density(
+        as.numeric(density_input[[month_var]]),
+        weights = density_input[[weight_var]] / sum(density_input[[weight_var]]),
+        from = min(as.numeric(data[[month_var]]), na.rm = TRUE),
+        to = max(as.numeric(data[[month_var]]), na.rm = TRUE),
+        bw = bandwidth_days * 24 * 60 * 60,
+        n = 512,
+        na.rm = TRUE
+      )
+
+      tibble(
+        culture_month = as.POSIXct(density_fit$x, origin = "1970-01-01", tz = "UTC"),
+        total_event_density = density_fit$y,
+        relative_total_event_density = density_fit$y / max(density_fit$y, na.rm = TRUE)
+      )
+    }) %>%
+    ungroup()
+}
+
 site_name <- Sys.getenv("CLIF_SITE_NAME", unset = "SITE")
 event_path <- Sys.getenv("ICU_CULTURE_EVENTS_PATH", unset = NA_character_)
 top_n_types <- as.integer(Sys.getenv("TOP_N_CULTURE_TYPES", unset = "8"))
 top_n_positivity_types <- as.integer(Sys.getenv("TOP_N_POSITIVITY_FLUID_CATEGORIES", unset = as.character(top_n_types)))
+density_bandwidth_days <- as.numeric(Sys.getenv("TOTAL_EVENT_DENSITY_BANDWIDTH_DAYS", unset = "180"))
 plot_start_date <- Sys.getenv("PLOT_START_DATE", unset = NA_character_)
 plot_end_date <- Sys.getenv("PLOT_END_DATE", unset = NA_character_)
 
@@ -164,6 +212,42 @@ monthly_positivity_by_fluid_category <- events %>%
     fluid_category_label = fct_reorder(fluid_category_label, n_events, .fun = sum, .desc = TRUE)
   )
 
+monthly_positivity_five_panel <- bind_rows(
+  events %>% mutate(culture_panel = "Overall"),
+  events %>% mutate(culture_panel = collapse_culture_panel(culture_type))
+) %>%
+  mutate(culture_panel = factor(culture_panel, levels = five_panel_levels)) %>%
+  group_by(culture_month, culture_panel) %>%
+  summarise(
+    n_events = n(),
+    n_positive_events = sum(any_positive_culture, na.rm = TRUE),
+    positive_event_rate = n_positive_events / n_events,
+    n_hospitalizations = n_distinct(hospitalization_id),
+    n_patients = n_distinct(patient_id),
+    .groups = "drop"
+  ) %>%
+  complete(
+    culture_month = month_seq,
+    culture_panel = factor(five_panel_levels, levels = five_panel_levels),
+    fill = list(
+      n_events = 0L,
+      n_positive_events = 0L,
+      n_hospitalizations = 0L,
+      n_patients = 0L
+    )
+  ) %>%
+  mutate(
+    site_name = site_name,
+    care_setting = "ICU",
+    positive_event_rate = if_else(n_events > 0, n_positive_events / n_events, NA_real_)
+  )
+
+five_panel_total_event_density <- weighted_time_density(
+  monthly_positivity_five_panel,
+  "culture_panel",
+  bandwidth_days = density_bandwidth_days
+)
+
 out_dir <- file.path("output", "time_series")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
@@ -171,9 +255,13 @@ stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 overall_path <- file.path(out_dir, glue("monthly_overall_culture_events_{site_name}_{stamp}.csv"))
 type_path <- file.path(out_dir, glue("monthly_culture_events_by_type_{site_name}_{stamp}.csv"))
 fluid_positivity_path <- file.path(out_dir, glue("monthly_positive_culture_event_rate_by_fluid_category_{site_name}_{stamp}.csv"))
+five_panel_positivity_path <- file.path(out_dir, glue("monthly_positive_culture_event_rate_five_panel_{site_name}_{stamp}.csv"))
+five_panel_density_path <- file.path(out_dir, glue("monthly_total_culture_event_density_five_panel_{site_name}_{stamp}.csv"))
 readr::write_csv(monthly_overall, overall_path)
 readr::write_csv(monthly_by_type, type_path)
 readr::write_csv(monthly_positivity_by_fluid_category, fluid_positivity_path)
+readr::write_csv(monthly_positivity_five_panel, five_panel_positivity_path)
+readr::write_csv(five_panel_total_event_density, five_panel_density_path)
 
 plot_theme <- theme_classic(base_size = 12) +
   theme(
@@ -202,6 +290,13 @@ culture_type_palette <- c(
   "Respiratory tract lower" = "#EECA3B",
   "Woundsite" = "#FF9DA6",
   "Other" = "#9D9D9D"
+)
+five_panel_palette <- c(
+  "Overall" = "#2F6C99",
+  "Blood buffy" = culture_type_palette[["Blood buffy"]],
+  "Genito urinary tract" = culture_type_palette[["Genito urinary tract"]],
+  "Respiratory tract" = culture_type_palette[["Respiratory tract"]],
+  "Other" = culture_type_palette[["Other"]]
 )
 available_palette <- culture_type_palette[names(culture_type_palette) %in% levels(monthly_by_type$culture_type)]
 
@@ -328,6 +423,43 @@ p_fluid_category_positivity_overlay <- monthly_positivity_by_fluid_category %>%
   plot_theme +
   guides(color = guide_legend(ncol = 4, byrow = TRUE))
 
+p_five_panel_positive_rate_density <- ggplot() +
+  geom_col(
+    data = monthly_positivity_five_panel %>% filter(n_events > 0),
+    aes(culture_month, positive_event_rate, fill = culture_panel),
+    width = month_bar_width,
+    color = "white",
+    linewidth = 0.05
+  ) +
+  geom_area(
+    data = five_panel_total_event_density,
+    aes(culture_month, relative_total_event_density),
+    fill = "#7A7A7A",
+    alpha = 0.18
+  ) +
+  geom_line(
+    data = five_panel_total_event_density,
+    aes(culture_month, relative_total_event_density),
+    color = "#4A4A4A",
+    linewidth = 0.75
+  ) +
+  facet_grid(rows = vars(culture_panel)) +
+  scale_fill_manual(values = five_panel_palette) +
+  scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+    limits = c(0, 1),
+    sec.axis = sec_axis(~ ., labels = percent_format(accuracy = 1), name = "Relative total event density")
+  ) +
+  labs(
+    title = "Monthly Positive Culture Event Rate and Total Event Density",
+    x = NULL,
+    y = "Positive culture event rate",
+    fill = NULL
+  ) +
+  plot_theme +
+  guides(fill = guide_legend(nrow = 1))
+
 p_type_facets <- monthly_by_type %>%
   filter(culture_type != "Other") %>%
   ggplot(aes(culture_month, n_events)) +
@@ -351,6 +483,7 @@ plot_paths <- c(
   type_positivity = file.path(out_dir, glue("monthly_culture_positivity_by_type_{site_name}_{stamp}.png")),
   fluid_category_positivity_facets = file.path(out_dir, glue("monthly_positive_culture_event_rate_by_fluid_category_{site_name}_{stamp}.png")),
   fluid_category_positivity_overlay = file.path(out_dir, glue("monthly_positive_culture_event_rate_by_fluid_category_overlay_{site_name}_{stamp}.png")),
+  five_panel_positive_rate_density = file.path(out_dir, glue("monthly_positive_culture_event_rate_density_five_panel_{site_name}_{stamp}.png")),
   type_facets = file.path(out_dir, glue("monthly_culture_volume_major_type_facets_{site_name}_{stamp}.png"))
 )
 
@@ -361,6 +494,7 @@ ggsave(plot_paths[["type_stacked_volume"]], p_type_stacked_volume, width = 11, h
 ggsave(plot_paths[["type_positivity"]], p_type_positivity, width = 11, height = 6, dpi = 300)
 ggsave(plot_paths[["fluid_category_positivity_facets"]], p_fluid_category_positivity_facets, width = 12, height = 12, dpi = 300)
 ggsave(plot_paths[["fluid_category_positivity_overlay"]], p_fluid_category_positivity_overlay, width = 11, height = 6.5, dpi = 300)
+ggsave(plot_paths[["five_panel_positive_rate_density"]], p_five_panel_positive_rate_density, width = 12, height = 14, dpi = 300)
 ggsave(plot_paths[["type_facets"]], p_type_facets, width = 11, height = 9, dpi = 300)
 
 message("Monthly overall summary:")
@@ -382,5 +516,7 @@ message("")
 message("Wrote monthly overall summary: ", overall_path)
 message("Wrote monthly type summary: ", type_path)
 message("Wrote monthly fluid-category positivity summary: ", fluid_positivity_path)
+message("Wrote monthly five-panel positivity summary: ", five_panel_positivity_path)
+message("Wrote monthly five-panel total event density summary: ", five_panel_density_path)
 message("Wrote plots:")
 print(plot_paths)
