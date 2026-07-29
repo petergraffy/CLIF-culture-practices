@@ -48,6 +48,7 @@ clean_label <- function(x) {
 site_name <- Sys.getenv("CLIF_SITE_NAME", unset = "SITE")
 event_path <- Sys.getenv("ICU_CULTURE_EVENTS_PATH", unset = NA_character_)
 top_n_types <- as.integer(Sys.getenv("TOP_N_CULTURE_TYPES", unset = "8"))
+top_n_positivity_types <- as.integer(Sys.getenv("TOP_N_POSITIVITY_FLUID_CATEGORIES", unset = as.character(top_n_types)))
 plot_start_date <- Sys.getenv("PLOT_START_DATE", unset = NA_character_)
 plot_end_date <- Sys.getenv("PLOT_END_DATE", unset = NA_character_)
 
@@ -90,6 +91,8 @@ events_plot <- events %>%
   mutate(culture_type_plot = if_else(culture_type %in% top_types, culture_type, "Other")) %>%
   mutate(culture_type_plot = fct_reorder(culture_type_plot, culture_type_plot == "Other", .desc = TRUE))
 
+month_seq <- seq(min(events$culture_month), max(events$culture_month), by = "month")
+
 monthly_overall <- events %>%
   group_by(culture_month) %>%
   summarise(
@@ -126,14 +129,51 @@ monthly_by_type <- events_plot %>%
     culture_type = fct_relevel(factor(culture_type), "Other", after = Inf)
   )
 
+positivity_fluid_categories <- events %>%
+  count(fluid_category, culture_type, sort = TRUE) %>%
+  slice_head(n = top_n_positivity_types)
+
+monthly_positivity_by_fluid_category <- events %>%
+  inner_join(
+    positivity_fluid_categories %>% select(fluid_category, culture_type),
+    by = c("fluid_category", "culture_type")
+  ) %>%
+  group_by(culture_month, fluid_category, fluid_category_label = culture_type) %>%
+  summarise(
+    n_events = n(),
+    n_positive_events = sum(any_positive_culture, na.rm = TRUE),
+    positive_event_rate = n_positive_events / n_events,
+    n_hospitalizations = n_distinct(hospitalization_id),
+    n_patients = n_distinct(patient_id),
+    .groups = "drop"
+  ) %>%
+  complete(
+    culture_month = month_seq,
+    nesting(fluid_category, fluid_category_label),
+    fill = list(
+      n_events = 0L,
+      n_positive_events = 0L,
+      n_hospitalizations = 0L,
+      n_patients = 0L
+    )
+  ) %>%
+  mutate(
+    site_name = site_name,
+    care_setting = "ICU",
+    positive_event_rate = if_else(n_events > 0, n_positive_events / n_events, NA_real_),
+    fluid_category_label = fct_reorder(fluid_category_label, n_events, .fun = sum, .desc = TRUE)
+  )
+
 out_dir <- file.path("output", "time_series")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 
 overall_path <- file.path(out_dir, glue("monthly_overall_culture_events_{site_name}_{stamp}.csv"))
 type_path <- file.path(out_dir, glue("monthly_culture_events_by_type_{site_name}_{stamp}.csv"))
+fluid_positivity_path <- file.path(out_dir, glue("monthly_positive_culture_event_rate_by_fluid_category_{site_name}_{stamp}.csv"))
 readr::write_csv(monthly_overall, overall_path)
 readr::write_csv(monthly_by_type, type_path)
+readr::write_csv(monthly_positivity_by_fluid_category, fluid_positivity_path)
 
 plot_theme <- theme_classic(base_size = 12) +
   theme(
@@ -223,7 +263,6 @@ p_type_stacked_volume <- ggplot(monthly_by_type_stacked, aes(culture_month, n_ev
   scale_y_continuous(labels = comma) +
   labs(
     title = "Monthly ICU Culture Events by Culture Type",
-    subtitle = "Stacked monthly event counts; Other includes Other unspecified and less common culture types",
     x = NULL,
     y = "Culture events",
     fill = NULL
@@ -239,12 +278,29 @@ p_type_positivity <- monthly_by_type %>%
   scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, NA)) +
   labs(
     title = "Monthly ICU Culture Event Positivity by Culture Type",
-    subtitle = "Months with at least 10 events for the displayed culture type",
     x = NULL,
     y = "Positive events",
     color = NULL
   ) +
   plot_theme
+
+p_fluid_category_positivity_facets <- monthly_positivity_by_fluid_category %>%
+  filter(n_events > 0) %>%
+  ggplot(aes(culture_month, positive_event_rate)) +
+  geom_line(color = "#2F6C99", linewidth = 0.7) +
+  geom_point(aes(size = n_events), color = "#2F6C99", alpha = 0.55) +
+  facet_wrap(vars(fluid_category_label), ncol = 2) +
+  scale_x_datetime(date_breaks = "2 years", date_labels = "%Y") +
+  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
+  scale_size_continuous(range = c(0.6, 2.8), labels = comma) +
+  labs(
+    title = "Monthly Positive Culture Event Rate by Fluid Category",
+    x = NULL,
+    y = "Positive culture events",
+    size = "Monthly events"
+  ) +
+  plot_theme +
+  guides(size = guide_legend(nrow = 1))
 
 p_type_facets <- monthly_by_type %>%
   filter(culture_type != "Other") %>%
@@ -267,6 +323,7 @@ plot_paths <- c(
   type_volume = file.path(out_dir, glue("monthly_culture_volume_by_type_{site_name}_{stamp}.png")),
   type_stacked_volume = file.path(out_dir, glue("monthly_culture_volume_stacked_by_type_{site_name}_{stamp}.png")),
   type_positivity = file.path(out_dir, glue("monthly_culture_positivity_by_type_{site_name}_{stamp}.png")),
+  fluid_category_positivity_facets = file.path(out_dir, glue("monthly_positive_culture_event_rate_by_fluid_category_{site_name}_{stamp}.png")),
   type_facets = file.path(out_dir, glue("monthly_culture_volume_major_type_facets_{site_name}_{stamp}.png"))
 )
 
@@ -275,6 +332,7 @@ ggsave(plot_paths[["overall_positivity"]], p_overall_positivity, width = 9, heig
 ggsave(plot_paths[["type_volume"]], p_type_volume, width = 11, height = 6, dpi = 300)
 ggsave(plot_paths[["type_stacked_volume"]], p_type_stacked_volume, width = 11, height = 6.5, dpi = 300)
 ggsave(plot_paths[["type_positivity"]], p_type_positivity, width = 11, height = 6, dpi = 300)
+ggsave(plot_paths[["fluid_category_positivity_facets"]], p_fluid_category_positivity_facets, width = 12, height = 12, dpi = 300)
 ggsave(plot_paths[["type_facets"]], p_type_facets, width = 11, height = 9, dpi = 300)
 
 message("Monthly overall summary:")
@@ -295,5 +353,6 @@ print(tibble(culture_type = top_types), n = Inf)
 message("")
 message("Wrote monthly overall summary: ", overall_path)
 message("Wrote monthly type summary: ", type_path)
+message("Wrote monthly fluid-category positivity summary: ", fluid_positivity_path)
 message("Wrote plots:")
 print(plot_paths)
