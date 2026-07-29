@@ -475,15 +475,15 @@ cumulative_top_organism_incidence_hour <- top_organisms %>%
   arrange(organism_label, icu_hour)
 
 culture_type_palette <- c(
-  "Blood buffy" = "#4C78A8",
-  "Respiratory tract" = "#F58518",
-  "Genito urinary tract" = "#54A24B",
-  "Meninges csf" = "#B279A2",
-  "Pleural cavity fluid" = "#E45756",
-  "Respiratory tract lower" = "#EECA3B",
-  "Woundsite" = "#FF9DA6",
-  "Catheter tip" = "#9C755F",
-  "Other" = "#9D9D9D",
+  "Blood buffy" = "#E41A1C",
+  "Respiratory tract" = "#377EB8",
+  "Genito urinary tract" = "#4DAF4A",
+  "Meninges csf" = "#984EA3",
+  "Pleural cavity fluid" = "#FFFF33",
+  "Respiratory tract lower" = "#A65628",
+  "Woundsite" = "#F781BF",
+  "Catheter tip" = "#FF7F00",
+  "Other" = "#999999",
   "No ICU culture" = "#C7C7C7"
 )
 specimen_levels <- levels(monthly_events_by_type_per_icu_day$specimen_type)

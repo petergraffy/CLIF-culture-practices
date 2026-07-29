@@ -292,15 +292,15 @@ monthly_result_status_rates <- icu_culture_events %>%
   arrange(calendar_month, culture_result)
 
 culture_type_palette <- c(
-  "Blood buffy" = "#4C78A8",
-  "Respiratory tract" = "#F58518",
-  "Genito urinary tract" = "#54A24B",
-  "Meninges csf" = "#B279A2",
-  "Pleural cavity fluid" = "#E45756",
-  "Respiratory tract lower" = "#EECA3B",
-  "Woundsite" = "#FF9DA6",
-  "Catheter tip" = "#9C755F",
-  "Other" = "#9D9D9D"
+  "Blood buffy" = "#E41A1C",
+  "Respiratory tract" = "#377EB8",
+  "Genito urinary tract" = "#4DAF4A",
+  "Meninges csf" = "#984EA3",
+  "Pleural cavity fluid" = "#FFFF33",
+  "Respiratory tract lower" = "#A65628",
+  "Woundsite" = "#F781BF",
+  "Catheter tip" = "#FF7F00",
+  "Other" = "#999999"
 )
 specimen_type_levels <- levels(monthly_culture_events_by_type$specimen_type)
 extra_specimen_types <- setdiff(specimen_type_levels, names(culture_type_palette))
