@@ -20,7 +20,7 @@ suppressPackageStartupMessages({
   library(tidyr)
 })
 
-latest_file <- function(pattern, path = file.path("output", "cohort")) {
+latest_file <- function(pattern, path = file.path("data", "intermediate", "cohort")) {
   files <- list.files(path, pattern = pattern, full.names = TRUE)
   if (length(files) == 0) {
     stop("No files found in ", path, " matching pattern: ", pattern)

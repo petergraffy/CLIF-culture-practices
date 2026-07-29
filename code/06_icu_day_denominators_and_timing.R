@@ -334,6 +334,18 @@ timing_bin_summary <- first_culture_timing %>%
   ) %>%
   arrange(timing_bin, desc(n_icu_admissions))
 
+first_culture_timing_summary <- first_culture_timing %>%
+  summarise(
+    site_name = site_name,
+    care_setting = "ICU",
+    n_icu_admissions = n(),
+    n_with_icu_culture = sum(any_icu_culture),
+    percent_with_icu_culture = 100 * mean(any_icu_culture),
+    median_hours_to_first_culture = median(first_culture_hours, na.rm = TRUE),
+    p25_hours_to_first_culture = quantile(first_culture_hours, 0.25, na.rm = TRUE),
+    p75_hours_to_first_culture = quantile(first_culture_hours, 0.75, na.rm = TRUE)
+  )
+
 icu_day_at_risk <- tibble(icu_day = seq_len(timing_max_day)) %>%
   mutate(
     n_icu_admissions_at_risk = map_int(
@@ -624,7 +636,7 @@ paths <- c(
   monthly_icu_days = file.path(out_dir, glue("monthly_icu_days_{site_name}_{stamp}.csv")),
   monthly_overall_rates = file.path(out_dir, glue("monthly_overall_culture_rates_per_100_icu_days_{site_name}_{stamp}.csv")),
   monthly_type_rates = file.path(out_dir, glue("monthly_specimen_type_culture_rates_per_100_icu_days_{site_name}_{stamp}.csv")),
-  first_culture_timing = file.path(out_dir, glue("first_culture_timing_{site_name}_{stamp}.csv")),
+  first_culture_timing_summary = file.path(out_dir, glue("first_culture_timing_summary_{site_name}_{stamp}.csv")),
   first_culture_timing_bins = file.path(out_dir, glue("first_culture_timing_bins_{site_name}_{stamp}.csv")),
   icu_day_event_rates = file.path(out_dir, glue("icu_day_culture_event_rates_{site_name}_{stamp}.csv")),
   cumulative_first_culture_by_day = file.path(out_dir, glue("cumulative_first_culture_by_icu_day_{site_name}_{stamp}.csv")),
@@ -641,7 +653,7 @@ paths <- c(
 write_csv(monthly_icu_days, paths[["monthly_icu_days"]])
 write_csv(monthly_overall_per_icu_day, paths[["monthly_overall_rates"]])
 write_csv(monthly_events_by_type_per_icu_day, paths[["monthly_type_rates"]])
-write_csv(first_culture_timing, paths[["first_culture_timing"]])
+write_csv(first_culture_timing_summary, paths[["first_culture_timing_summary"]])
 write_csv(timing_bin_summary, paths[["first_culture_timing_bins"]])
 write_csv(icu_day_event_rates, paths[["icu_day_event_rates"]])
 write_csv(cumulative_first_culture_by_day, paths[["cumulative_first_culture_by_day"]])
@@ -676,14 +688,7 @@ print(monthly_overall_per_icu_day %>% summarise(
 
 message("")
 message("First culture timing summary:")
-print(first_culture_timing %>% summarise(
-  n_icu_admissions = n(),
-  n_with_icu_culture = sum(any_icu_culture),
-  percent_with_icu_culture = 100 * mean(any_icu_culture),
-  median_hours_to_first_culture = median(first_culture_hours, na.rm = TRUE),
-  p25_hours_to_first_culture = quantile(first_culture_hours, 0.25, na.rm = TRUE),
-  p75_hours_to_first_culture = quantile(first_culture_hours, 0.75, na.rm = TRUE)
-), width = Inf)
+print(first_culture_timing_summary, width = Inf)
 
 message("")
 message("Specimen types displayed separately:")

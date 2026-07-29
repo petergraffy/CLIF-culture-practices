@@ -78,8 +78,8 @@ raw_category_ranges <- micro %>%
   group_by(fluid_category) %>%
   summarise(
     n_rows = n(),
-    first_collect_dttm = min(collect_dttm),
-    last_collect_dttm = max(collect_dttm),
+    first_collect_date = as.Date(min(collect_dttm)),
+    last_collect_date = as.Date(max(collect_dttm)),
     n_months = n_distinct(month),
     .groups = "drop"
   ) %>%

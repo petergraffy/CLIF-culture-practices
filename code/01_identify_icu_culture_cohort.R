@@ -5,8 +5,9 @@
 #   Patients/hospitalizations with at least one microbiology culture collected during an ICU stay.
 #
 # Export:
-#   Every microbiology culture row collected during an ICU interval for qualifying hospitalizations,
-#   across all specimen/fluid types.
+#   Aggregate, non-PHI cohort and fluid summaries under output/cohort/.
+#   Row-level culture extracts are private intermediates and are written only to data/intermediate/
+#   when WRITE_ROW_LEVEL_INTERMEDIATES=true.
 # ================================================================================================
 
 suppressPackageStartupMessages({
@@ -25,6 +26,7 @@ site_name <- clif_site_name
 tables_path <- clif_tables_path
 study_start_date <- Sys.getenv("STUDY_START_DATE", unset = NA_character_)
 study_end_date <- Sys.getenv("STUDY_END_DATE", unset = NA_character_)
+write_row_level_intermediates <- tolower(Sys.getenv("WRITE_ROW_LEVEL_INTERMEDIATES", unset = "true")) %in% c("true", "1", "yes", "y")
 
 safe_ts <- function(x, tz = "UTC") {
   if (inherits(x, "POSIXt")) return(as.POSIXct(x, tz = tz))
@@ -180,11 +182,10 @@ fluid_summary <- icu_culture_rows %>%
 
 cohort_summary <- tibble(
   site_name = site_name,
-  tables_path = tables_path,
   study_start_date = if_else(is.na(study_start_dttm), NA_character_, as.character(as.Date(study_start_dttm))),
   study_end_date = if_else(is.na(study_end_dttm), NA_character_, as.character(as.Date(study_end_dttm))),
   cohort_definition = "hospitalizations with at least one microbiology culture collected during an ICU interval",
-  culture_export_definition = "all microbiology_culture rows with method_category == culture and collect_dttm within an ICU interval for qualifying hospitalizations",
+  culture_event_definition = "unique patient/hospitalization/ICU interval/collection time/specimen/method culture events with method_category == culture collected during ICU time",
   n_patients = n_distinct(cohort_hospitalizations$patient_id),
   n_hospitalizations = n_distinct(cohort_hospitalizations$hospitalization_id),
   n_icu_intervals_with_culture = n_distinct(cohort_icu_intervals$icu_interval_id),
@@ -194,28 +195,34 @@ cohort_summary <- tibble(
   n_positive_culture_events = sum(culture_event_summary$any_positive_culture, na.rm = TRUE),
   n_fluid_categories = n_distinct(icu_culture_rows$fluid_category, na.rm = TRUE),
   n_organism_groups = n_distinct(icu_culture_rows$organism_group, na.rm = TRUE),
-  n_rows_with_collect_dttm = count_nonmissing(icu_culture_rows$collect_dttm),
-  min_collect_dttm = suppressWarnings(min(icu_culture_rows$collect_dttm, na.rm = TRUE)),
-  max_collect_dttm = suppressWarnings(max(icu_culture_rows$collect_dttm, na.rm = TRUE))
+  n_rows_with_collection_time = count_nonmissing(icu_culture_rows$collect_dttm),
+  first_collect_date = as.Date(suppressWarnings(min(icu_culture_rows$collect_dttm, na.rm = TRUE))),
+  last_collect_date = as.Date(suppressWarnings(max(icu_culture_rows$collect_dttm, na.rm = TRUE)))
 )
 
 out_dir <- file.path("output", "cohort")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+intermediate_dir <- file.path("data", "intermediate", "cohort")
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 
-culture_path <- file.path(out_dir, glue("icu_culture_rows_{site_name}_{stamp}.csv"))
-event_path <- file.path(out_dir, glue("icu_culture_events_{site_name}_{stamp}.csv"))
-hospitalization_path <- file.path(out_dir, glue("icu_culture_cohort_hospitalizations_{site_name}_{stamp}.csv"))
-icu_interval_path <- file.path(out_dir, glue("icu_culture_cohort_icu_intervals_{site_name}_{stamp}.csv"))
 summary_path <- file.path(out_dir, glue("icu_culture_cohort_summary_{site_name}_{stamp}.csv"))
 fluid_path <- file.path(out_dir, glue("icu_culture_fluid_summary_{site_name}_{stamp}.csv"))
 
-readr::write_csv(icu_culture_rows, culture_path)
-readr::write_csv(culture_event_summary, event_path)
-readr::write_csv(cohort_hospitalizations, hospitalization_path)
-readr::write_csv(cohort_icu_intervals, icu_interval_path)
 readr::write_csv(cohort_summary, summary_path)
 readr::write_csv(fluid_summary, fluid_path)
+
+if (write_row_level_intermediates) {
+  dir.create(intermediate_dir, recursive = TRUE, showWarnings = FALSE)
+  culture_path <- file.path(intermediate_dir, glue("icu_culture_rows_{site_name}_{stamp}.csv"))
+  event_path <- file.path(intermediate_dir, glue("icu_culture_events_{site_name}_{stamp}.csv"))
+  hospitalization_path <- file.path(intermediate_dir, glue("icu_culture_cohort_hospitalizations_{site_name}_{stamp}.csv"))
+  icu_interval_path <- file.path(intermediate_dir, glue("icu_culture_cohort_icu_intervals_{site_name}_{stamp}.csv"))
+
+  readr::write_csv(icu_culture_rows, culture_path)
+  readr::write_csv(culture_event_summary, event_path)
+  readr::write_csv(cohort_hospitalizations, hospitalization_path)
+  readr::write_csv(cohort_icu_intervals, icu_interval_path)
+}
 
 message("ICU culture cohort summary:")
 print(cohort_summary)
@@ -223,9 +230,10 @@ message("")
 message("Top culture fluid categories:")
 print(fluid_summary %>% select(fluid_category, fluid_name, n_culture_rows, n_positive_rows, n_hospitalizations, n_patients) %>% head(25), n = 25)
 message("")
-message("Wrote ICU culture rows: ", culture_path)
-message("Wrote ICU culture events: ", event_path)
-message("Wrote cohort hospitalizations: ", hospitalization_path)
-message("Wrote cohort ICU intervals: ", icu_interval_path)
 message("Wrote cohort summary: ", summary_path)
 message("Wrote fluid summary: ", fluid_path)
+if (write_row_level_intermediates) {
+  message("")
+  message("Wrote private row-level intermediates under ignored path: ", intermediate_dir)
+  message("Do not share or copy data/intermediate/ into pooled site exports.")
+}
