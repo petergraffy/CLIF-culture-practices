@@ -475,9 +475,9 @@ cumulative_top_organism_incidence_hour <- top_organisms %>%
   arrange(organism_label, icu_hour)
 
 culture_type_palette <- c(
-  "Blood buffy" = "#BC80BD",
-  "Respiratory tract" = "#8DD3C7",
-  "Genito urinary tract" = "#BEBADA",
+  "Blood buffy" = "#E41A1C",
+  "Respiratory tract" = "#984EA3",
+  "Genito urinary tract" = "#A65628",
   "Meninges csf" = "#FB8072",
   "Pleural cavity fluid" = "#FDB462",
   "Respiratory tract lower" = "#B3DE69",
@@ -490,7 +490,7 @@ specimen_levels <- levels(monthly_events_by_type_per_icu_day$specimen_type)
 extra_specimen_types <- setdiff(specimen_levels, names(culture_type_palette))
 extra_palette <- if (length(extra_specimen_types) > 0) {
   setNames(
-    grDevices::colorRampPalette(c("#BC80BD", "#8DD3C7", "#BEBADA", "#FB8072", "#80B1D3", "#B3DE69", "#FDB462", "#FCCDE5"))(length(extra_specimen_types)),
+    grDevices::colorRampPalette(c("#E41A1C", "#984EA3", "#A65628", "#FB8072", "#80B1D3", "#B3DE69", "#FDB462", "#FCCDE5"))(length(extra_specimen_types)),
     extra_specimen_types
   )
 } else {
