@@ -104,7 +104,7 @@ After cohort identification, run:
 ICU_CULTURE_ROWS_PATH=data/intermediate/cohort/icu_culture_rows_UCMC_YYYYMMDD_HHMMSS.csv Rscript code/08_organism_trends.R
 ```
 
-This screens top organisms and targeted organism/resistance text labels for monthly detection-rate trends per 100 ICU admissions. True MRSA, VRE, ESBL, and CRE phenotypes require susceptibility or resistance fields; this script only identifies those labels when resistance terms appear in organism text.
+This screens top organisms and targeted organism/resistance text labels for monthly detection-rate trends per 100 ICU admissions and per 100 ICU days. Trend plots are color-coded by organism taxonomy. True MRSA, VRE, ESBL, and CRE phenotypes require susceptibility or resistance fields; this script only identifies those labels when resistance terms appear in organism text.
 
 ## Recommended Multi-Site Run
 

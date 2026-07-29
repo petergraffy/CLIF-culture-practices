@@ -4,8 +4,9 @@
 # Question:
 #   Which organisms or targeted resistance-related organism labels are increasing over calendar time?
 #
-# Denominator:
-#   All ICU admissions, defined as merged ICU ADT intervals and counted by ICU admission month.
+# Denominators:
+#   1. All ICU admissions, defined as merged ICU ADT intervals and counted by ICU admission month.
+#   2. All ICU days, allocated to calendar months from merged ICU ADT interval overlap time.
 #
 # Numerator:
 #   Positive ICU culture detection events. Events are collapsed by ICU culture event and organism,
@@ -71,7 +72,49 @@ rolling_mean_trailing <- function(x, k = 6) {
   as.numeric(stats::filter(x, rep(1 / k, k), sides = 1))
 }
 
-build_monthly_icu_admissions <- function(month_seq, study_start_dttm, study_end_dttm) {
+classify_organism_type <- function(x) {
+  x_clean <- str_to_lower(coalesce(x, ""))
+  case_when(
+    str_detect(x_clean, "candida|yeast|fung|aspergillus|cryptococcus|mold|mould|saccharomyces|fusarium|mucor|rhizopus|pneumocystis|torulopsis") ~ "Fungi/yeast",
+    str_detect(x_clean, "mycobacter|tuberculosis|\\bafb\\b|acid fast") ~ "Mycobacteria/AFB",
+    str_detect(x_clean, "anaerob|bacteroides|clostrid|prevotella|fusobacter|cutibacter|propionibacter|propionbacterium|leptotrichia|clostridioides") ~ "Anaerobes",
+    str_detect(x_clean, "amebiasis|cryptosporidium|echinoco|giardia|protozo|toxoplasma|trichomonas|parasite") ~ "Parasite/protozoa",
+    str_detect(x_clean, "adenovirus|cytomegalovirus|enterovirus|epstein|hepatitis|herpes|hhv|hiv|influenza|measles|mumps|papovavirus|parainfluenza|polyomavirus|respiratory_syncytial|rsv|rhinovirus|rotavirus|rubella|virus|viral|covid|sars|cmv") ~ "Virus",
+    str_detect(x_clean, "borrelia|chlamydia|coxiella|leptospira|mycoplasma|rickettsia|treponema") ~ "Atypical/other bacteria",
+    str_detect(x_clean, "staphylococcus|streptococcus|enterococcus|bacillus|corynebacter|lactobacillus|listeria|leuconostoc|micrococcus|nocardia|rhodococcus|stomatococcus|mrsa|vre|gram_positive|gram positive|gpc|coag_pos|coag_neg|coagneg") ~ "Gram positive bacteria",
+    str_detect(x_clean, "acinetobacter|agrobacterium|alcaligenes|branhamelia|moraxella|pseudomonas|stenotrophomonas|xanthomonas|klebsiella|enterobacter|escherichia|serratia|haemophilus|citrobacter|proteus|neisseria|salmonella|shigella|campylobacter|burkholderia|cepacia|legionella|flavimonas|flavobacterium|helicobacter|methylobacterium|vibrio|esbl|cre|carbapenem|gram_negative|gram negative|gnr") ~ "Gram negative bacteria",
+    str_detect(x_clean, "bacteria|gram|cocci|bacilli|rods|flora") ~ "Other bacteria",
+    TRUE ~ "Other/unspecified"
+  )
+}
+
+organism_type_levels <- c(
+  "Gram positive bacteria",
+  "Gram negative bacteria",
+  "Fungi/yeast",
+  "Mycobacteria/AFB",
+  "Anaerobes",
+  "Atypical/other bacteria",
+  "Other bacteria",
+  "Virus",
+  "Parasite/protozoa",
+  "Other/unspecified"
+)
+
+organism_type_base_colors <- c(
+  "Gram positive bacteria" = "#2F6C99",
+  "Gram negative bacteria" = "#D55E00",
+  "Fungi/yeast" = "#7B4AB8",
+  "Mycobacteria/AFB" = "#008B8B",
+  "Anaerobes" = "#8C6D31",
+  "Atypical/other bacteria" = "#6A994E",
+  "Other bacteria" = "#4E8F4A",
+  "Virus" = "#C44E52",
+  "Parasite/protozoa" = "#B56576",
+  "Other/unspecified" = "#6B7280"
+)
+
+build_monthly_icu_denominators <- function(month_seq, study_start_dttm, study_end_dttm) {
   hospitalization <- read_tbl("hospitalization") %>%
     transmute(
       patient_id,
@@ -88,7 +131,7 @@ build_monthly_icu_admissions <- function(month_seq, study_start_dttm, study_end_
       location_category = str_to_lower(str_trim(as.character(location_category)))
     )
 
-  adt %>%
+  icu_admissions <- adt %>%
     filter(location_category == "icu", !is.na(icu_in_dttm)) %>%
     left_join(hospitalization, by = "hospitalization_id") %>%
     mutate(
@@ -106,14 +149,43 @@ build_monthly_icu_admissions <- function(month_seq, study_start_dttm, study_end_
     group_by(patient_id, hospitalization_id, icu_admission_seq) %>%
     summarise(
       icu_in_dttm = min(icu_in_dttm, na.rm = TRUE),
+      icu_out_dttm = max(icu_out_dttm, na.rm = TRUE),
       .groups = "drop"
     ) %>%
+    mutate(
+      icu_in_dttm = if_else(!is.na(study_start_dttm) & icu_in_dttm < study_start_dttm, study_start_dttm, icu_in_dttm),
+      icu_out_dttm = if_else(!is.na(study_end_dttm) & icu_out_dttm > study_end_dttm, study_end_dttm, icu_out_dttm)
+    ) %>%
+    filter(icu_out_dttm > icu_in_dttm)
+
+  monthly_admissions <- icu_admissions %>%
     mutate(calendar_month = floor_date(icu_in_dttm, "month")) %>%
-    filter(is.na(study_start_dttm) | icu_in_dttm >= study_start_dttm) %>%
-    filter(is.na(study_end_dttm) | icu_in_dttm <= study_end_dttm) %>%
     count(calendar_month, name = "n_icu_admissions") %>%
     complete(calendar_month = month_seq, fill = list(n_icu_admissions = 0L)) %>%
     arrange(calendar_month)
+
+  month_windows <- tibble(
+    calendar_month = month_seq,
+    month_start = month_seq,
+    month_end = month_seq %m+% months(1)
+  )
+
+  monthly_days <- icu_admissions %>%
+    tidyr::crossing(month_windows) %>%
+    mutate(
+      overlap_start = pmax(icu_in_dttm, month_start),
+      overlap_end = pmin(icu_out_dttm, month_end),
+      overlap_days = as.numeric(difftime(overlap_end, overlap_start, units = "hours")) / 24
+    ) %>%
+    filter(overlap_days > 0) %>%
+    group_by(calendar_month) %>%
+    summarise(n_icu_days = sum(overlap_days), .groups = "drop") %>%
+    complete(calendar_month = month_seq, fill = list(n_icu_days = 0)) %>%
+    arrange(calendar_month)
+
+  monthly_admissions %>%
+    left_join(monthly_days, by = "calendar_month") %>%
+    mutate(n_icu_days = coalesce(n_icu_days, 0))
 }
 
 target_organism_patterns <- tibble::tribble(
@@ -129,11 +201,14 @@ target_organism_patterns <- tibble::tribble(
   "Escherichia coli", "escherichia[_ ]coli|\\be[._ ]?coli\\b",
   "Candida auris", "candida[_ ]auris",
   "Clostridioides difficile", "clostridioides[_ ]difficile|clostridium[_ ]difficile"
+) %>%
+  mutate(
+    organism_type = factor(classify_organism_type(target_label), levels = organism_type_levels)
 )
 
-fit_poisson_trend <- function(data) {
+fit_poisson_trend <- function(data, denominator_var) {
   model_data <- data %>%
-    filter(!is.na(n_icu_admissions), n_icu_admissions > 0) %>%
+    filter(!is.na(.data[[denominator_var]]), .data[[denominator_var]] > 0) %>%
     mutate(month_index = as.numeric(difftime(calendar_month, min(calendar_month), units = "days")) / 30.4375)
 
   if (nrow(model_data) < 12 || sum(model_data$n_detection_events, na.rm = TRUE) == 0) {
@@ -148,7 +223,7 @@ fit_poisson_trend <- function(data) {
   fit <- glm(
     n_detection_events ~ month_index,
     family = poisson(),
-    offset = log(n_icu_admissions),
+    offset = log(.subset2(model_data, denominator_var)),
     data = model_data
   )
   beta <- unname(coef(fit)[["month_index"]])
@@ -162,7 +237,7 @@ fit_poisson_trend <- function(data) {
   )
 }
 
-make_monthly_rates <- function(data, label_var, month_seq, monthly_icu_admissions) {
+make_monthly_rates <- function(data, label_var, month_seq, monthly_icu_denominators) {
   data %>%
     group_by(calendar_month, organism_label = .data[[label_var]]) %>%
     summarise(n_detection_events = n_distinct(detection_event_id), .groups = "drop") %>%
@@ -171,11 +246,16 @@ make_monthly_rates <- function(data, label_var, month_seq, monthly_icu_admission
       organism_label,
       fill = list(n_detection_events = 0L)
     ) %>%
-    left_join(monthly_icu_admissions, by = "calendar_month") %>%
+    left_join(monthly_icu_denominators, by = "calendar_month") %>%
     mutate(
       detection_events_per_100_icu_admissions = if_else(
         n_icu_admissions > 0,
         100 * n_detection_events / n_icu_admissions,
+        NA_real_
+      ),
+      detection_events_per_100_icu_days = if_else(
+        n_icu_days > 0,
+        100 * n_detection_events / n_icu_days,
         NA_real_
       )
     ) %>%
@@ -245,16 +325,19 @@ if (nrow(rows) == 0) {
 }
 
 month_seq <- seq(min(rows$calendar_month), max(rows$calendar_month), by = "month")
-monthly_icu_admissions <- build_monthly_icu_admissions(month_seq, study_start_dttm, study_end_dttm)
+monthly_icu_denominators <- build_monthly_icu_denominators(month_seq, study_start_dttm, study_end_dttm)
 
 top_organism_labels <- rows %>%
   distinct(detection_event_id, organism_category_label) %>%
   count(organism_category_label, name = "total_detection_events", sort = TRUE) %>%
-  slice_head(n = top_n_organisms)
+  slice_head(n = top_n_organisms) %>%
+  mutate(
+    organism_type = factor(classify_organism_type(organism_category_label), levels = organism_type_levels)
+  )
 
 top_monthly_rates <- rows %>%
   semi_join(top_organism_labels, by = "organism_category_label") %>%
-  make_monthly_rates("organism_category_label", month_seq, monthly_icu_admissions) %>%
+  make_monthly_rates("organism_category_label", month_seq, monthly_icu_denominators) %>%
   left_join(top_organism_labels, by = c("organism_label" = "organism_category_label"))
 
 target_detections <- target_organism_patterns %>%
@@ -269,86 +352,86 @@ target_detections <- target_organism_patterns %>%
   distinct()
 
 target_monthly_rates <- if (nrow(target_detections) > 0) {
-  make_monthly_rates(target_detections, "target_label", month_seq, monthly_icu_admissions) %>%
-    mutate(total_detection_events = sum(n_detection_events), .by = organism_label)
+  make_monthly_rates(target_detections, "target_label", month_seq, monthly_icu_denominators) %>%
+    mutate(total_detection_events = sum(n_detection_events), .by = organism_label) %>%
+    left_join(
+      target_organism_patterns %>% select(organism_label = target_label, organism_type),
+      by = "organism_label"
+    )
 } else {
   tidyr::expand_grid(calendar_month = month_seq, organism_label = target_organism_patterns$target_label) %>%
-    left_join(monthly_icu_admissions, by = "calendar_month") %>%
+    left_join(monthly_icu_denominators, by = "calendar_month") %>%
+    left_join(
+      target_organism_patterns %>% select(organism_label = target_label, organism_type),
+      by = "organism_label"
+    ) %>%
     mutate(
       n_detection_events = 0L,
       detection_events_per_100_icu_admissions = if_else(n_icu_admissions > 0, 0, NA_real_),
+      detection_events_per_100_icu_days = if_else(n_icu_days > 0, 0, NA_real_),
       total_detection_events = 0L
     )
 }
 
-trend_summary_top <- top_monthly_rates %>%
-  group_by(organism_label) %>%
-  group_modify(~ fit_poisson_trend(.x)) %>%
-  ungroup() %>%
-  left_join(
-    top_monthly_rates %>%
-      group_by(organism_label) %>%
-      summarise(
-        total_detection_events = max(total_detection_events, na.rm = TRUE),
-        first_nonzero_month = suppressWarnings(min(calendar_month[n_detection_events > 0], na.rm = TRUE)),
-        last_nonzero_month = suppressWarnings(max(calendar_month[n_detection_events > 0], na.rm = TRUE)),
-        mean_monthly_rate_per_100_icu_admissions = mean(detection_events_per_100_icu_admissions, na.rm = TRUE),
-        .groups = "drop"
-      ),
-    by = "organism_label"
-  ) %>%
-  mutate(
-    trend_direction = case_when(
-      is.na(annual_percent_change) | is.na(p_value) ~ "Not estimated",
-      p_value < 0.05 & annual_percent_change > 0 ~ "Increasing",
-      p_value < 0.05 & annual_percent_change < 0 ~ "Decreasing",
-      TRUE ~ "No clear trend"
-    )
-  ) %>%
-  arrange(desc(annual_percent_change))
+summarise_trends <- function(data, denominator_var, rate_var, zero_label = "Not estimated") {
+  data %>%
+    group_by(organism_label) %>%
+    group_modify(~ fit_poisson_trend(.x, denominator_var)) %>%
+    ungroup() %>%
+    left_join(
+      data %>%
+        group_by(organism_label, organism_type) %>%
+        summarise(
+          total_detection_events = max(total_detection_events, na.rm = TRUE),
+          first_nonzero_month = suppressWarnings(min(calendar_month[n_detection_events > 0], na.rm = TRUE)),
+          last_nonzero_month = suppressWarnings(max(calendar_month[n_detection_events > 0], na.rm = TRUE)),
+          mean_monthly_rate = mean(.data[[rate_var]], na.rm = TRUE),
+          .groups = "drop"
+        ),
+      by = "organism_label"
+    ) %>%
+    mutate(
+      first_nonzero_month = if_else(is.infinite(first_nonzero_month), as.POSIXct(NA), first_nonzero_month),
+      last_nonzero_month = if_else(is.infinite(last_nonzero_month), as.POSIXct(NA), last_nonzero_month),
+      trend_direction = case_when(
+        total_detection_events == 0 ~ zero_label,
+        is.na(annual_percent_change) | is.na(p_value) ~ "Not estimated",
+        p_value < 0.05 & annual_percent_change > 0 ~ "Increasing",
+        p_value < 0.05 & annual_percent_change < 0 ~ "Decreasing",
+        TRUE ~ "No clear trend"
+      )
+    ) %>%
+    arrange(desc(annual_percent_change))
+}
 
-trend_summary_targets <- target_monthly_rates %>%
-  group_by(organism_label) %>%
-  group_modify(~ fit_poisson_trend(.x)) %>%
-  ungroup() %>%
-  left_join(
-    target_monthly_rates %>%
-      group_by(organism_label) %>%
-      summarise(
-        total_detection_events = max(total_detection_events, na.rm = TRUE),
-        first_nonzero_month = suppressWarnings(min(calendar_month[n_detection_events > 0], na.rm = TRUE)),
-        last_nonzero_month = suppressWarnings(max(calendar_month[n_detection_events > 0], na.rm = TRUE)),
-        mean_monthly_rate_per_100_icu_admissions = mean(detection_events_per_100_icu_admissions, na.rm = TRUE),
-        .groups = "drop"
-      ),
-    by = "organism_label"
-  ) %>%
-  mutate(
-    first_nonzero_month = if_else(is.infinite(first_nonzero_month), as.POSIXct(NA), first_nonzero_month),
-    last_nonzero_month = if_else(is.infinite(last_nonzero_month), as.POSIXct(NA), last_nonzero_month),
-    trend_direction = case_when(
-      total_detection_events == 0 ~ "Not observed",
-      is.na(annual_percent_change) | is.na(p_value) ~ "Not estimated",
-      p_value < 0.05 & annual_percent_change > 0 ~ "Increasing",
-      p_value < 0.05 & annual_percent_change < 0 ~ "Decreasing",
-      TRUE ~ "No clear trend"
-    )
-  ) %>%
-  arrange(desc(annual_percent_change))
+trend_summary_top_admissions <- summarise_trends(
+  top_monthly_rates,
+  "n_icu_admissions",
+  "detection_events_per_100_icu_admissions"
+)
+trend_summary_top_icu_days <- summarise_trends(
+  top_monthly_rates,
+  "n_icu_days",
+  "detection_events_per_100_icu_days"
+)
+trend_summary_targets_admissions <- summarise_trends(
+  target_monthly_rates,
+  "n_icu_admissions",
+  "detection_events_per_100_icu_admissions",
+  zero_label = "Not observed"
+)
+trend_summary_targets_icu_days <- summarise_trends(
+  target_monthly_rates,
+  "n_icu_days",
+  "detection_events_per_100_icu_days",
+  zero_label = "Not observed"
+)
 
-increasing_labels <- trend_summary_top %>%
+increasing_labels <- trend_summary_top_admissions %>%
   filter(total_detection_events >= 25, !is.na(annual_percent_change)) %>%
   arrange(desc(annual_percent_change)) %>%
   slice_head(n = plot_n_increasing) %>%
   pull(organism_label)
-
-plot_increasing_data <- top_monthly_rates %>%
-  filter(organism_label %in% increasing_labels) %>%
-  arrange(organism_label, calendar_month) %>%
-  group_by(organism_label) %>%
-  mutate(rate_rolling_6mo = rolling_mean_trailing(detection_events_per_100_icu_admissions, 6)) %>%
-  ungroup() %>%
-  mutate(organism_label = factor(organism_label, levels = increasing_labels))
 
 target_plot_labels <- target_monthly_rates %>%
   group_by(organism_label) %>%
@@ -357,71 +440,138 @@ target_plot_labels <- target_monthly_rates %>%
   arrange(desc(total_detection_events), organism_label) %>%
   pull(organism_label)
 
-plot_target_data <- target_monthly_rates %>%
-  filter(organism_label %in% target_plot_labels) %>%
-  arrange(organism_label, calendar_month) %>%
-  group_by(organism_label) %>%
-  mutate(rate_rolling_6mo = rolling_mean_trailing(detection_events_per_100_icu_admissions, 6)) %>%
-  ungroup() %>%
-  mutate(organism_label = factor(organism_label, levels = target_plot_labels))
+prepare_plot_data <- function(data, plot_labels, rate_var) {
+  data %>%
+    filter(organism_label %in% plot_labels) %>%
+    mutate(
+      plot_rate = .data[[rate_var]],
+      organism_type = factor(organism_type, levels = organism_type_levels)
+    ) %>%
+    arrange(organism_label, calendar_month) %>%
+    group_by(organism_label) %>%
+    mutate(rate_rolling_6mo = rolling_mean_trailing(plot_rate, 6)) %>%
+    ungroup() %>%
+    mutate(organism_label = factor(organism_label, levels = plot_labels))
+}
+
+plot_increasing_admissions_data <- prepare_plot_data(
+  top_monthly_rates,
+  increasing_labels,
+  "detection_events_per_100_icu_admissions"
+)
+plot_increasing_icu_days_data <- prepare_plot_data(
+  top_monthly_rates,
+  increasing_labels,
+  "detection_events_per_100_icu_days"
+)
+plot_target_admissions_data <- prepare_plot_data(
+  target_monthly_rates,
+  target_plot_labels,
+  "detection_events_per_100_icu_admissions"
+)
+plot_target_icu_days_data <- prepare_plot_data(
+  target_monthly_rates,
+  target_plot_labels,
+  "detection_events_per_100_icu_days"
+)
+
+taxonomy_palette <- organism_type_base_colors[organism_type_levels]
+
+plot_trend_facets <- function(data, title, y_label, ncol = 3) {
+  available_taxonomy_palette <- taxonomy_palette[names(taxonomy_palette) %in% unique(as.character(data$organism_type))]
+
+  ggplot(data, aes(calendar_month, plot_rate)) +
+    geom_col(aes(fill = organism_type), width = 25 * 24 * 60 * 60) +
+    geom_line(aes(y = rate_rolling_6mo), color = "black", linewidth = 0.65, na.rm = TRUE) +
+    facet_wrap(vars(organism_label), scales = "free_y", ncol = ncol) +
+    scale_fill_manual(values = available_taxonomy_palette, drop = FALSE) +
+    scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
+    scale_y_continuous(labels = comma, limits = c(0, NA)) +
+    labs(
+      title = title,
+      x = NULL,
+      y = y_label,
+      fill = "Taxonomy"
+    ) +
+    theme_trends
+}
 
 out_dir <- file.path("output", "organism_trends")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 
 paths <- c(
-  trend_summary_top = file.path(out_dir, glue("organism_detection_trend_screen_top_{site_name}_{stamp}.csv")),
-  trend_summary_targets = file.path(out_dir, glue("organism_detection_trend_screen_targets_{site_name}_{stamp}.csv")),
-  monthly_top_rates = file.path(out_dir, glue("monthly_top_organism_detection_rates_per_100_icu_admissions_{site_name}_{stamp}.csv")),
-  monthly_target_rates = file.path(out_dir, glue("monthly_target_organism_detection_rates_per_100_icu_admissions_{site_name}_{stamp}.csv")),
-  monthly_icu_admissions = file.path(out_dir, glue("monthly_icu_admissions_for_organism_trends_{site_name}_{stamp}.csv")),
-  increasing_plot = file.path(out_dir, glue("monthly_fastest_increasing_organism_detection_rates_{site_name}_{stamp}.png")),
-  target_plot = file.path(out_dir, glue("monthly_target_organism_detection_rates_{site_name}_{stamp}.png"))
+  trend_summary_top_admissions = file.path(out_dir, glue("organism_detection_trend_screen_top_per_100_icu_admissions_{site_name}_{stamp}.csv")),
+  trend_summary_top_icu_days = file.path(out_dir, glue("organism_detection_trend_screen_top_per_100_icu_days_{site_name}_{stamp}.csv")),
+  trend_summary_targets_admissions = file.path(out_dir, glue("organism_detection_trend_screen_targets_per_100_icu_admissions_{site_name}_{stamp}.csv")),
+  trend_summary_targets_icu_days = file.path(out_dir, glue("organism_detection_trend_screen_targets_per_100_icu_days_{site_name}_{stamp}.csv")),
+  monthly_top_rates = file.path(out_dir, glue("monthly_top_organism_detection_rates_{site_name}_{stamp}.csv")),
+  monthly_target_rates = file.path(out_dir, glue("monthly_target_organism_detection_rates_{site_name}_{stamp}.csv")),
+  monthly_icu_denominators = file.path(out_dir, glue("monthly_icu_denominators_for_organism_trends_{site_name}_{stamp}.csv")),
+  increasing_plot_admissions = file.path(out_dir, glue("monthly_fastest_increasing_organism_detection_rates_per_100_icu_admissions_{site_name}_{stamp}.png")),
+  increasing_plot_icu_days = file.path(out_dir, glue("monthly_fastest_increasing_organism_detection_rates_per_100_icu_days_{site_name}_{stamp}.png")),
+  target_plot_admissions = file.path(out_dir, glue("monthly_target_organism_detection_rates_per_100_icu_admissions_{site_name}_{stamp}.png")),
+  target_plot_icu_days = file.path(out_dir, glue("monthly_target_organism_detection_rates_per_100_icu_days_{site_name}_{stamp}.png"))
 )
 
-write_csv(trend_summary_top, paths[["trend_summary_top"]])
-write_csv(trend_summary_targets, paths[["trend_summary_targets"]])
+write_csv(trend_summary_top_admissions, paths[["trend_summary_top_admissions"]])
+write_csv(trend_summary_top_icu_days, paths[["trend_summary_top_icu_days"]])
+write_csv(trend_summary_targets_admissions, paths[["trend_summary_targets_admissions"]])
+write_csv(trend_summary_targets_icu_days, paths[["trend_summary_targets_icu_days"]])
 write_csv(top_monthly_rates, paths[["monthly_top_rates"]])
 write_csv(target_monthly_rates, paths[["monthly_target_rates"]])
-write_csv(monthly_icu_admissions, paths[["monthly_icu_admissions"]])
+write_csv(monthly_icu_denominators, paths[["monthly_icu_denominators"]])
 
-p_increasing <- ggplot(plot_increasing_data, aes(calendar_month, detection_events_per_100_icu_admissions)) +
-  geom_col(fill = "#4C78A8", width = 25 * 24 * 60 * 60) +
-  geom_line(aes(y = rate_rolling_6mo), color = "black", linewidth = 0.65, na.rm = TRUE) +
-  facet_wrap(vars(organism_label), scales = "free_y", ncol = 3) +
-  scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
-  scale_y_continuous(labels = comma, limits = c(0, NA)) +
-  labs(
-    title = "Fastest Increasing Organism Detection Rates",
-    x = NULL,
-    y = "Detection events per 100 ICU admissions"
-  ) +
-  theme_trends
+p_increasing_admissions <- plot_trend_facets(
+  plot_increasing_admissions_data,
+  "Fastest Increasing Organism Detection Rates per 100 ICU Admissions",
+  "Detection events per 100 ICU admissions",
+  ncol = 3
+)
+p_increasing_icu_days <- plot_trend_facets(
+  plot_increasing_icu_days_data,
+  "Fastest Increasing Organism Detection Rates per 100 ICU Days",
+  "Detection events per 100 ICU days",
+  ncol = 3
+)
+p_targets_admissions <- plot_trend_facets(
+  plot_target_admissions_data,
+  "Target Organism Detection Rates per 100 ICU Admissions",
+  "Detection events per 100 ICU admissions",
+  ncol = 2
+)
+p_targets_icu_days <- plot_trend_facets(
+  plot_target_icu_days_data,
+  "Target Organism Detection Rates per 100 ICU Days",
+  "Detection events per 100 ICU days",
+  ncol = 2
+)
 
-p_targets <- ggplot(plot_target_data, aes(calendar_month, detection_events_per_100_icu_admissions)) +
-  geom_col(fill = "#D55E00", width = 25 * 24 * 60 * 60) +
-  geom_line(aes(y = rate_rolling_6mo), color = "black", linewidth = 0.65, na.rm = TRUE) +
-  facet_wrap(vars(organism_label), scales = "free_y", ncol = 2) +
-  scale_x_datetime(date_breaks = "1 year", date_labels = "%Y") +
-  scale_y_continuous(labels = comma, limits = c(0, NA)) +
-  labs(
-    title = "Target Organism Detection Rates",
-    x = NULL,
-    y = "Detection events per 100 ICU admissions"
-  ) +
-  theme_trends
-
-ggsave(paths[["increasing_plot"]], p_increasing, width = 14, height = 12, dpi = 300)
-ggsave(paths[["target_plot"]], p_targets, width = 12, height = 10, dpi = 300)
+ggsave(paths[["increasing_plot_admissions"]], p_increasing_admissions, width = 14, height = 12, dpi = 300)
+ggsave(paths[["increasing_plot_icu_days"]], p_increasing_icu_days, width = 14, height = 12, dpi = 300)
+ggsave(paths[["target_plot_admissions"]], p_targets_admissions, width = 12, height = 10, dpi = 300)
+ggsave(paths[["target_plot_icu_days"]], p_targets_icu_days, width = 12, height = 10, dpi = 300)
 
 message("Wrote trend summaries:")
-print(paths[c("trend_summary_top", "trend_summary_targets", "monthly_top_rates", "monthly_target_rates")])
+print(paths[c(
+  "trend_summary_top_admissions",
+  "trend_summary_top_icu_days",
+  "trend_summary_targets_admissions",
+  "trend_summary_targets_icu_days",
+  "monthly_top_rates",
+  "monthly_target_rates"
+)])
 message("Wrote plots:")
-print(paths[c("increasing_plot", "target_plot")])
+print(paths[c(
+  "increasing_plot_admissions",
+  "increasing_plot_icu_days",
+  "target_plot_admissions",
+  "target_plot_icu_days"
+)])
 
 message("Top increasing organisms by annual percent change:")
 print(
-  trend_summary_top %>%
+  trend_summary_top_admissions %>%
     select(organism_label, total_detection_events, annual_percent_change, p_value, trend_direction) %>%
     head(15),
   n = 15,
@@ -430,7 +580,7 @@ print(
 
 message("Target organism trend summary:")
 print(
-  trend_summary_targets %>%
+  trend_summary_targets_admissions %>%
     select(organism_label, total_detection_events, annual_percent_change, p_value, trend_direction) %>%
     arrange(desc(total_detection_events)),
   n = Inf,
