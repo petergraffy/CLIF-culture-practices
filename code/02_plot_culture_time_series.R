@@ -66,16 +66,16 @@ monthly_event_density <- function(data, panel_var, count_var = "n_events") {
   data %>%
     group_by(.data[[panel_var]]) %>%
     mutate(
-      max_monthly_events = max(.data[[count_var]], na.rm = TRUE),
-      relative_total_event_density = if_else(max_monthly_events > 0, .data[[count_var]] / max_monthly_events, NA_real_)
+      total_events = sum(.data[[count_var]], na.rm = TRUE),
+      monthly_total_event_density = if_else(total_events > 0, .data[[count_var]] / total_events, NA_real_)
     ) %>%
     ungroup() %>%
     transmute(
       culture_panel = .data[[panel_var]],
       culture_month,
       n_events = .data[[count_var]],
-      max_monthly_events,
-      relative_total_event_density
+      total_events,
+      monthly_total_event_density
     )
 }
 
@@ -229,6 +229,7 @@ monthly_positivity_five_panel <- bind_rows(
   )
 
 five_panel_total_event_density <- monthly_event_density(monthly_positivity_five_panel, "culture_panel")
+density_plot_scale <- 1 / max(five_panel_total_event_density$monthly_total_event_density, na.rm = TRUE)
 
 out_dir <- file.path("output", "time_series")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
@@ -415,16 +416,9 @@ p_five_panel_positive_rate_density <- ggplot() +
   ) +
   geom_area(
     data = five_panel_total_event_density,
-    aes(culture_month, relative_total_event_density),
+    aes(culture_month, monthly_total_event_density * density_plot_scale),
     fill = "#7A7A7A",
-    alpha = 0.18
-  ) +
-  geom_line(
-    data = five_panel_total_event_density,
-    aes(culture_month, relative_total_event_density),
-    color = "#4A4A4A",
-    linewidth = 0.75,
-    lineend = "round"
+    alpha = 0.10
   ) +
   facet_grid(rows = vars(culture_panel)) +
   scale_fill_manual(values = five_panel_palette) +
@@ -432,7 +426,11 @@ p_five_panel_positive_rate_density <- ggplot() +
   scale_y_continuous(
     labels = percent_format(accuracy = 1),
     limits = c(0, 1),
-    sec.axis = sec_axis(~ ., labels = percent_format(accuracy = 1), name = "Relative total event density")
+    sec.axis = sec_axis(
+      ~ . / density_plot_scale,
+      labels = percent_format(accuracy = 0.1),
+      name = "Monthly total event density"
+    )
   ) +
   labs(
     title = "Monthly Positive Culture Event Rate and Total Event Density",
