@@ -433,7 +433,6 @@ p_icu_day_rate_stacked <- ggplot(
   scale_y_continuous(labels = comma, limits = c(0, NA)) +
   labs(
     title = "Monthly ICU Culture Collection Rates by Specimen Type",
-    subtitle = "Culture events per 100 ICU days; ICU days allocated by calendar-month overlap",
     x = NULL,
     y = "Culture events per 100 ICU days",
     fill = NULL
@@ -458,7 +457,6 @@ p_timing_bins <- timing_bin_summary %>%
   scale_y_continuous(labels = label_number(suffix = "%"), limits = c(0, NA)) +
   labs(
     title = "Timing of First ICU Culture",
-    subtitle = "First culture specimen type among all ICU admissions",
     x = NULL,
     y = "ICU admissions",
     fill = NULL
@@ -476,7 +474,6 @@ p_cumulative_first_culture <- ggplot(
   scale_y_continuous(labels = label_number(suffix = "%"), limits = c(0, NA)) +
   labs(
     title = "Cumulative First ICU Culture by ICU Day",
-    subtitle = "Cumulative percent of ICU admissions with at least one culture",
     x = "ICU day",
     y = "ICU admissions with first culture"
   ) +
@@ -491,7 +488,6 @@ p_icu_day_event_rates <- ggplot(
   scale_y_continuous(labels = comma, limits = c(0, NA)) +
   labs(
     title = "Culture Event Timing by ICU Day",
-    subtitle = "Culture events per 100 ICU admissions still in the ICU on each day",
     x = "ICU day",
     y = "Culture events per 100 ICU admissions at risk"
   ) +
@@ -511,7 +507,6 @@ p_cumulative_events_by_type <- ggplot(
   scale_y_continuous(labels = label_number(suffix = "%"), limits = c(0, NA)) +
   labs(
     title = "Cumulative ICU Culture Events by Time Since ICU Admission and Specimen Type",
-    subtitle = glue("Percent of each specimen type's ICU culture events collected by hour through day {timing_max_hour / 24}; denominator includes all ICU culture events"),
     x = "Days since ICU admission",
     y = "Culture events collected",
     color = NULL
