@@ -34,9 +34,12 @@ safe_ts <- function(x, tz = "UTC") {
 
 site_name <- clif_site_name
 diagnosis_start <- safe_ts(Sys.getenv("DIAGNOSIS_START_DATE", unset = "2022-01-01"))
-diagnosis_end <- safe_ts(Sys.getenv("DIAGNOSIS_END_DATE", unset = "2024-12-31")) + days(1) - seconds(1)
+diagnosis_end <- safe_ts(Sys.getenv("DIAGNOSIS_END_DATE", unset = config_value(config, "study_end_date", default = "2024-12-31"))) + days(1) - seconds(1)
 shift_date <- safe_ts(Sys.getenv("CATEGORY_SHIFT_DATE", unset = "2023-05-01"))
 event_path <- Sys.getenv("ICU_CULTURE_EVENTS_PATH", unset = NA_character_)
+if (is.na(event_path) || !nzchar(event_path)) {
+  event_path <- latest_project_intermediate_file("^icu_culture_events_.*\\.csv$", "cohort")
+}
 
 target_categories <- str_split(
   Sys.getenv(
@@ -101,8 +104,7 @@ post_shift_other_names <- micro %>%
   filter(period == "post_shift", fluid_category == "other_unspecified") %>%
   count(fluid_name, sort = TRUE)
 
-out_dir <- file.path("output", "diagnostics")
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+out_dir <- project_output_dir("diagnostics")
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 
 range_path <- file.path(out_dir, glue("raw_fluid_category_ranges_{site_name}_{stamp}.csv"))

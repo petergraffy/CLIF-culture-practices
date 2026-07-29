@@ -20,13 +20,7 @@ suppressPackageStartupMessages({
   library(tidyr)
 })
 
-latest_file <- function(pattern, path = file.path("data", "intermediate", "cohort")) {
-  files <- list.files(path, pattern = pattern, full.names = TRUE)
-  if (length(files) == 0) {
-    stop("No files found in ", path, " matching pattern: ", pattern)
-  }
-  files[which.max(file.info(files)$mtime)]
-}
+source("utils/clif_io.R")
 
 safe_ts <- function(x, tz = "UTC") {
   if (inherits(x, "POSIXt")) return(as.POSIXct(x, tz = tz))
@@ -79,15 +73,15 @@ monthly_event_density <- function(data, panel_var, count_var = "n_events") {
     )
 }
 
-site_name <- Sys.getenv("CLIF_SITE_NAME", unset = "SITE")
+site_name <- clif_site_name
 event_path <- Sys.getenv("ICU_CULTURE_EVENTS_PATH", unset = NA_character_)
 top_n_types <- as.integer(Sys.getenv("TOP_N_CULTURE_TYPES", unset = "8"))
 top_n_positivity_types <- as.integer(Sys.getenv("TOP_N_POSITIVITY_FLUID_CATEGORIES", unset = as.character(top_n_types)))
-plot_start_date <- Sys.getenv("PLOT_START_DATE", unset = NA_character_)
-plot_end_date <- Sys.getenv("PLOT_END_DATE", unset = NA_character_)
+plot_start_date <- config_value(config, c("plot_start_date", "study_start_date"), env = "PLOT_START_DATE", default = NA_character_)
+plot_end_date <- config_value(config, c("plot_end_date", "study_end_date"), env = "PLOT_END_DATE", default = NA_character_)
 
 if (is.na(event_path) || !nzchar(event_path)) {
-  event_path <- latest_file("^icu_culture_events_.*\\.csv$")
+  event_path <- latest_project_intermediate_file("^icu_culture_events_.*\\.csv$", "cohort")
 }
 
 message("Reading ICU culture events: ", event_path)
@@ -231,8 +225,7 @@ monthly_positivity_five_panel <- bind_rows(
 five_panel_total_event_density <- monthly_event_density(monthly_positivity_five_panel, "culture_panel")
 density_plot_scale <- 1 / max(five_panel_total_event_density$monthly_total_event_density, na.rm = TRUE)
 
-out_dir <- file.path("output", "time_series")
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+out_dir <- project_output_dir("time_series")
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 
 overall_path <- file.path(out_dir, glue("monthly_overall_culture_events_{site_name}_{stamp}.csv"))

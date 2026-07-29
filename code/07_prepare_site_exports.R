@@ -21,7 +21,7 @@ suppressPackageStartupMessages({
 source("utils/clif_io.R")
 
 site_name <- clif_site_name
-output_dir <- Sys.getenv("SITE_EXPORT_OUTPUT_DIR", unset = "output")
+output_dir <- Sys.getenv("SITE_EXPORT_OUTPUT_DIR", unset = project_output_path())
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 manifest_dir <- file.path(output_dir, "site_exports")
 dir.create(manifest_dir, recursive = TRUE, showWarnings = FALSE)

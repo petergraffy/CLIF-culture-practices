@@ -3,9 +3,46 @@
 source("utils/config.R")
 
 clif_site_name <- config_value(config, "site_name", env = "CLIF_SITE_NAME", default = "SITE")
-clif_repo_path <- config_value(config, "repo", env = "CLIF_REPO", default = getwd())
+clif_repo_path <- normalizePath(
+  config_value(config, "repo", env = "CLIF_REPO", default = getwd()),
+  winslash = "/",
+  mustWork = FALSE
+)
 clif_tables_path <- config_value(config, "tables_path", env = "CLIF_TABLES_PATH", required = TRUE)
 clif_file_type <- tolower(config_value(config, "file_type", env = "CLIF_FILE_TYPE", default = "parquet"))
+
+project_path <- function(...) {
+  file.path(clif_repo_path, ...)
+}
+
+project_output_path <- function(...) {
+  project_path("output", ...)
+}
+
+project_output_dir <- function(...) {
+  path <- project_output_path(...)
+  dir.create(path, recursive = TRUE, showWarnings = FALSE)
+  path
+}
+
+project_intermediate_path <- function(...) {
+  project_path("data", "intermediate", ...)
+}
+
+project_intermediate_dir <- function(...) {
+  path <- project_intermediate_path(...)
+  dir.create(path, recursive = TRUE, showWarnings = FALSE)
+  path
+}
+
+latest_project_intermediate_file <- function(pattern, ...) {
+  path <- project_intermediate_path(...)
+  files <- list.files(path, pattern = pattern, full.names = TRUE)
+  if (length(files) == 0) {
+    stop("No files found in ", path, " matching pattern: ", pattern)
+  }
+  files[which.max(file.info(files)$mtime)]
+}
 
 read_any <- function(path) {
   ext <- tolower(tools::file_ext(path))

@@ -20,13 +20,7 @@ suppressPackageStartupMessages({
   library(tidyr)
 })
 
-latest_file <- function(pattern, path = file.path("data", "intermediate", "cohort")) {
-  files <- list.files(path, pattern = pattern, full.names = TRUE)
-  if (length(files) == 0) {
-    stop("No files found in ", path, " matching pattern: ", pattern)
-  }
-  files[which.max(file.info(files)$mtime)]
-}
+source("utils/clif_io.R")
 
 safe_ts <- function(x, tz = "UTC") {
   if (inherits(x, "POSIXt")) return(as.POSIXct(x, tz = tz))
@@ -352,17 +346,17 @@ make_organism_legend <- function(data) {
   )
 }
 
-site_name <- Sys.getenv("CLIF_SITE_NAME", unset = "SITE")
+site_name <- clif_site_name
 row_path <- Sys.getenv("ICU_CULTURE_ROWS_PATH", unset = NA_character_)
 top_n_culture_types <- as.integer(Sys.getenv("TOP_N_CULTURE_TYPES", unset = "8"))
 top_n_overall <- as.integer(Sys.getenv("TOP_N_ORGANISMS_OVERALL", unset = "20"))
 top_n_per_type <- as.integer(Sys.getenv("TOP_N_ORGANISMS_PER_TYPE", unset = "10"))
 top_n_trends <- as.integer(Sys.getenv("TOP_N_ORGANISM_TRENDS", unset = "5"))
-plot_start_date <- Sys.getenv("PLOT_START_DATE", unset = NA_character_)
-plot_end_date <- Sys.getenv("PLOT_END_DATE", unset = NA_character_)
+plot_start_date <- config_value(config, c("plot_start_date", "study_start_date"), env = "PLOT_START_DATE", default = NA_character_)
+plot_end_date <- config_value(config, c("plot_end_date", "study_end_date"), env = "PLOT_END_DATE", default = NA_character_)
 
 if (is.na(row_path) || !nzchar(row_path)) {
-  row_path <- latest_file("^icu_culture_rows_.*\\.csv$")
+  row_path <- latest_project_intermediate_file("^icu_culture_rows_.*\\.csv$", "cohort")
 }
 
 message("Reading ICU culture rows: ", row_path)
@@ -624,8 +618,7 @@ monthly_organism_category_five_panel_rate <- add_icu_admission_rates(
   monthly_icu_admissions
 )
 
-out_dir <- file.path("output", "organisms")
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+out_dir <- project_output_dir("organisms")
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 
 paths <- c(

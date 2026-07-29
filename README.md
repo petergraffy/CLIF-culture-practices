@@ -46,8 +46,8 @@ Do not place row-level CLIF extracts in `output/`. Scripts that need local row-l
 
 Configure local CLIF table paths with `config/config.json`, then run:
 
-```r
-source("code/01_identify_icu_culture_cohort.R")
+```sh
+Rscript code/01_identify_icu_culture_cohort.R
 ```
 
 This writes timestamped ICU culture cohort exports under `output/cohort/`.
@@ -60,16 +60,14 @@ WRITE_ROW_LEVEL_INTERMEDIATES=false Rscript code/01_identify_icu_culture_cohort.
 
 Optional date-window environment variables restrict by culture collection time:
 
-```sh
-STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2025-12-31 Rscript code/01_identify_icu_culture_cohort.R
-```
+Prefer setting `study_start_date` and `study_end_date` in `config/config.json` for site runs. Environment variables remain available for one-off reruns.
 
 ## Time-Series Plots
 
 After cohort identification, run:
 
 ```sh
-ICU_CULTURE_EVENTS_PATH=data/intermediate/cohort/icu_culture_events_UCMC_YYYYMMDD_HHMMSS.csv Rscript code/02_plot_culture_time_series.R
+Rscript code/02_plot_culture_time_series.R
 ```
 
 Optional plot controls:
@@ -78,14 +76,14 @@ Optional plot controls:
 TOP_N_CULTURE_TYPES=8 PLOT_END_DATE=2024-12-31 Rscript code/02_plot_culture_time_series.R
 ```
 
-If `ICU_CULTURE_EVENTS_PATH` is not set, the script reads the latest private event file from `data/intermediate/cohort/`. It writes monthly aggregate summaries and PNG figures under `output/time_series/`.
+The script reads the latest private event file from `<repo>/data/intermediate/cohort/`. It writes monthly aggregate summaries and PNG figures under `<repo>/output/time_series/`.
 
 ## Positive Organism Plots
 
 After cohort identification, run:
 
 ```sh
-ICU_CULTURE_ROWS_PATH=data/intermediate/cohort/icu_culture_rows_UCMC_YYYYMMDD_HHMMSS.csv Rscript code/04_plot_positive_organisms.R
+Rscript code/04_plot_positive_organisms.R
 ```
 
 Optional controls:
@@ -94,28 +92,29 @@ Optional controls:
 TOP_N_CULTURE_TYPES=8 TOP_N_ORGANISMS_PER_TYPE=10 PLOT_END_DATE=2024-12-31 Rscript code/04_plot_positive_organisms.R
 ```
 
-If `ICU_CULTURE_ROWS_PATH` is not set, the script reads the latest private culture row file from `data/intermediate/cohort/`. It writes aggregate positive organism summaries and PNG figures under `output/organisms/`.
+The script reads the latest private culture row file from `<repo>/data/intermediate/cohort/`. It writes aggregate positive organism summaries and PNG figures under `<repo>/output/organisms/`.
 
 ## Organism Trend Screen
 
 After cohort identification, run:
 
 ```sh
-ICU_CULTURE_ROWS_PATH=data/intermediate/cohort/icu_culture_rows_UCMC_YYYYMMDD_HHMMSS.csv Rscript code/08_organism_trends.R
+Rscript code/08_organism_trends.R
 ```
 
 This screens top organisms and targeted resistance phenotypes for monthly detection-rate trends per 100 ICU admissions and per 100 ICU days. Trend plots are color-coded by organism taxonomy. When `microbiology_susceptibility` is available, MRSA, VRE, and CRE are derived from resistant antimicrobial susceptibility results; otherwise, the script falls back to explicit resistance terms in organism text and writes an aggregate source summary.
 
 ## Recommended Multi-Site Run
 
-For each site, set `CLIF_SITE_NAME`, `CLIF_TABLES_PATH`, and the study window, then run the aggregate-producing scripts:
+For each site, create `config/config.json` with `site_name`, `repo`, `tables_path`, `file_type`, and the study window. Then run the aggregate-producing scripts from the repository root:
 
 ```sh
-STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2024-12-31 Rscript code/01_identify_icu_culture_cohort.R
-STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2024-12-31 Rscript code/05_culture_rates_per_icu_admission.R
-STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2024-12-31 Rscript code/06_icu_day_denominators_and_timing.R
-PLOT_START_DATE=2018-01-01 PLOT_END_DATE=2024-12-31 Rscript code/04_plot_positive_organisms.R
-STUDY_START_DATE=2018-01-01 STUDY_END_DATE=2024-12-31 Rscript code/08_organism_trends.R
+Rscript code/01_identify_icu_culture_cohort.R
+Rscript code/02_plot_culture_time_series.R
+Rscript code/04_plot_positive_organisms.R
+Rscript code/05_culture_rates_per_icu_admission.R
+Rscript code/06_icu_day_denominators_and_timing.R
+Rscript code/08_organism_trends.R
 Rscript code/07_prepare_site_exports.R
 ```
 

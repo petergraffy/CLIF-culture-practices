@@ -24,8 +24,8 @@ source("utils/clif_io.R")
 
 site_name <- clif_site_name
 tables_path <- clif_tables_path
-study_start_date <- Sys.getenv("STUDY_START_DATE", unset = NA_character_)
-study_end_date <- Sys.getenv("STUDY_END_DATE", unset = NA_character_)
+study_start_date <- config_value(config, "study_start_date", env = "STUDY_START_DATE", default = NA_character_)
+study_end_date <- config_value(config, "study_end_date", env = "STUDY_END_DATE", default = NA_character_)
 write_row_level_intermediates <- tolower(Sys.getenv("WRITE_ROW_LEVEL_INTERMEDIATES", unset = "true")) %in% c("true", "1", "yes", "y")
 
 safe_ts <- function(x, tz = "UTC") {
@@ -200,9 +200,8 @@ cohort_summary <- tibble(
   last_collect_date = as.Date(suppressWarnings(max(icu_culture_rows$collect_dttm, na.rm = TRUE)))
 )
 
-out_dir <- file.path("output", "cohort")
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-intermediate_dir <- file.path("data", "intermediate", "cohort")
+out_dir <- project_output_dir("cohort")
+intermediate_dir <- project_intermediate_path("cohort")
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 
 summary_path <- file.path(out_dir, glue("icu_culture_cohort_summary_{site_name}_{stamp}.csv"))
@@ -212,7 +211,7 @@ readr::write_csv(cohort_summary, summary_path)
 readr::write_csv(fluid_summary, fluid_path)
 
 if (write_row_level_intermediates) {
-  dir.create(intermediate_dir, recursive = TRUE, showWarnings = FALSE)
+  intermediate_dir <- project_intermediate_dir("cohort")
   culture_path <- file.path(intermediate_dir, glue("icu_culture_rows_{site_name}_{stamp}.csv"))
   event_path <- file.path(intermediate_dir, glue("icu_culture_events_{site_name}_{stamp}.csv"))
   hospitalization_path <- file.path(intermediate_dir, glue("icu_culture_cohort_hospitalizations_{site_name}_{stamp}.csv"))

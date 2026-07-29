@@ -52,8 +52,8 @@ month_bar_width <- 25 * 24 * 60 * 60
 
 site_name <- clif_site_name
 tables_path <- clif_tables_path
-study_start_date <- Sys.getenv("STUDY_START_DATE", unset = Sys.getenv("PLOT_START_DATE", unset = NA_character_))
-study_end_date <- Sys.getenv("STUDY_END_DATE", unset = Sys.getenv("PLOT_END_DATE", unset = NA_character_))
+study_start_date <- config_value(config, c("study_start_date", "plot_start_date"), env = "STUDY_START_DATE", default = Sys.getenv("PLOT_START_DATE", unset = NA_character_))
+study_end_date <- config_value(config, c("study_end_date", "plot_end_date"), env = "STUDY_END_DATE", default = Sys.getenv("PLOT_END_DATE", unset = NA_character_))
 top_n_types <- as.integer(Sys.getenv("TOP_N_CULTURE_TYPES", unset = "8"))
 
 study_start_dttm <- if (!is.na(study_start_date) && nzchar(study_start_date)) safe_ts(study_start_date) else as.POSIXct(NA)
@@ -374,8 +374,7 @@ p_result_status_rate <- ggplot(
   ) +
   plot_theme
 
-out_dir <- file.path("output", "rates")
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+out_dir <- project_output_dir("rates")
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 
 paths <- c(

@@ -32,14 +32,6 @@ suppressPackageStartupMessages({
 
 source("utils/clif_io.R")
 
-latest_file <- function(pattern, path = file.path("data", "intermediate", "cohort")) {
-  files <- list.files(path, pattern = pattern, full.names = TRUE)
-  if (length(files) == 0) {
-    stop("No files found in ", path, " matching pattern: ", pattern)
-  }
-  files[which.max(file.info(files)$mtime)]
-}
-
 safe_ts <- function(x, tz = "UTC") {
   if (inherits(x, "POSIXt")) return(as.POSIXct(x, tz = tz))
   if (is.numeric(x)) {
@@ -382,13 +374,13 @@ theme_trends <- theme_classic(base_size = 12) +
 
 site_name <- clif_site_name
 row_path <- Sys.getenv("ICU_CULTURE_ROWS_PATH", unset = NA_character_)
-study_start_date <- Sys.getenv("STUDY_START_DATE", unset = Sys.getenv("PLOT_START_DATE", unset = NA_character_))
-study_end_date <- Sys.getenv("STUDY_END_DATE", unset = Sys.getenv("PLOT_END_DATE", unset = NA_character_))
+study_start_date <- config_value(config, c("study_start_date", "plot_start_date"), env = "STUDY_START_DATE", default = Sys.getenv("PLOT_START_DATE", unset = NA_character_))
+study_end_date <- config_value(config, c("study_end_date", "plot_end_date"), env = "STUDY_END_DATE", default = Sys.getenv("PLOT_END_DATE", unset = NA_character_))
 top_n_organisms <- as.integer(Sys.getenv("TOP_N_TREND_ORGANISMS", unset = "25"))
 plot_n_increasing <- as.integer(Sys.getenv("PLOT_N_INCREASING_ORGANISMS", unset = "12"))
 
 if (is.na(row_path) || !nzchar(row_path)) {
-  row_path <- latest_file("^icu_culture_rows_.*\\.csv$")
+  row_path <- latest_project_intermediate_file("^icu_culture_rows_.*\\.csv$", "cohort")
 }
 
 study_start_dttm <- if (!is.na(study_start_date) && nzchar(study_start_date)) safe_ts(study_start_date) else as.POSIXct(NA)
@@ -626,8 +618,7 @@ plot_trend_facets <- function(data, title, y_label, ncol = 3) {
     theme_trends
 }
 
-out_dir <- file.path("output", "organism_trends")
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+out_dir <- project_output_dir("organism_trends")
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 
 paths <- c(

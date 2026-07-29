@@ -1,9 +1,12 @@
 # Shared project configuration.
 
-project_root <- normalizePath(getwd(), mustWork = FALSE)
+source("utils/clif_io.R")
+
+project_root <- clif_repo_path
 
 paths <- list(
-  data = file.path(project_root, "data"),
-  output = file.path(project_root, "output"),
-  config = file.path(project_root, "config")
+  data = project_path("data"),
+  intermediate = project_intermediate_path(),
+  output = project_output_path(),
+  config = project_path("config")
 )
