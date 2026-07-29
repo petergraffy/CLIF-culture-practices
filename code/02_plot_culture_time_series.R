@@ -286,21 +286,26 @@ p_type_positivity <- monthly_by_type %>%
 
 p_fluid_category_positivity_facets <- monthly_positivity_by_fluid_category %>%
   filter(n_events > 0) %>%
-  ggplot(aes(culture_month, positive_event_rate)) +
-  geom_line(color = "#2F6C99", linewidth = 0.7) +
-  geom_point(aes(size = n_events), color = "#2F6C99", alpha = 0.55) +
+  ggplot(aes(culture_month)) +
+  geom_col(aes(y = n_events), fill = "#D9D9D9", width = month_bar_width, color = NA) +
+  geom_col(
+    aes(y = n_positive_events, fill = fluid_category_label),
+    width = month_bar_width * 0.82,
+    color = "white",
+    linewidth = 0.05
+  ) +
   facet_wrap(vars(fluid_category_label), ncol = 2) +
   scale_x_datetime(date_breaks = "2 years", date_labels = "%Y") +
-  scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
-  scale_size_continuous(range = c(0.6, 2.8), labels = comma) +
+  scale_y_continuous(labels = comma, limits = c(0, NA)) +
+  scale_fill_manual(values = culture_type_palette) +
   labs(
-    title = "Monthly Positive Culture Event Rate by Fluid Category",
+    title = "Monthly Total (Gray) and Positive Culture Events by Fluid Category",
     x = NULL,
-    y = "Positive culture events",
-    size = "Monthly events"
+    y = "Culture events",
+    fill = NULL
   ) +
   plot_theme +
-  guides(size = guide_legend(nrow = 1))
+  guides(fill = guide_legend(ncol = 4, byrow = TRUE))
 
 fluid_category_positivity_levels <- levels(monthly_positivity_by_fluid_category$fluid_category_label)
 fluid_category_positivity_palette <- culture_type_palette[
