@@ -354,6 +354,36 @@ cumulative_first_culture_by_day <- first_culture_timing %>%
       100 * n_icu_admissions_with_first_culture_by_day / n_icu_admissions
   )
 
+cumulative_culture_events_by_type_day <- icu_culture_events %>%
+  mutate(specimen_type_plot = if_else(specimen_type %in% top_types, specimen_type, "Other")) %>%
+  group_by(specimen_type = specimen_type_plot) %>%
+  summarise(n_total_culture_events = n(), .groups = "drop") %>%
+  crossing(icu_day = seq_len(timing_max_day)) %>%
+  left_join(
+    icu_culture_events %>%
+      mutate(
+        specimen_type = if_else(specimen_type %in% top_types, specimen_type, "Other"),
+        event_icu_day = pmin(icu_day, timing_max_day)
+      ) %>%
+      filter(icu_day >= 1) %>%
+      count(specimen_type, event_icu_day, name = "n_culture_events") %>%
+      group_by(specimen_type) %>%
+      complete(event_icu_day = seq_len(timing_max_day), fill = list(n_culture_events = 0L)) %>%
+      arrange(specimen_type, event_icu_day) %>%
+      mutate(n_culture_events_by_day = cumsum(n_culture_events)) %>%
+      ungroup(),
+    by = c("specimen_type", "icu_day" = "event_icu_day")
+  ) %>%
+  mutate(
+    n_culture_events = coalesce(n_culture_events, 0L),
+    n_culture_events_by_day = coalesce(n_culture_events_by_day, 0L),
+    site_name = site_name,
+    care_setting = "ICU",
+    percent_culture_events_by_day = 100 * n_culture_events_by_day / n_total_culture_events,
+    specimen_type = fct_relevel(factor(specimen_type), "Other", after = Inf)
+  ) %>%
+  arrange(specimen_type, icu_day)
+
 culture_type_palette <- c(
   "Blood buffy" = "#4C78A8",
   "Respiratory tract" = "#F58518",
@@ -467,6 +497,25 @@ p_icu_day_event_rates <- ggplot(
   plot_theme +
   theme(legend.position = "none")
 
+p_cumulative_events_by_type <- ggplot(
+  cumulative_culture_events_by_type_day,
+  aes(icu_day, percent_culture_events_by_day, color = specimen_type)
+) +
+  geom_line(linewidth = 0.85) +
+  geom_point(size = 1.25) +
+  scale_color_manual(values = available_palette) +
+  scale_x_continuous(breaks = seq_len(timing_max_day)) +
+  scale_y_continuous(labels = label_number(suffix = "%"), limits = c(0, NA)) +
+  labs(
+    title = "Cumulative ICU Culture Events by ICU Day and Specimen Type",
+    subtitle = glue("Percent of each specimen type's ICU culture events collected by ICU day; events after day {timing_max_day} included at day {timing_max_day}"),
+    x = "ICU day",
+    y = "Culture events collected",
+    color = NULL
+  ) +
+  plot_theme +
+  guides(color = guide_legend(ncol = 4, byrow = FALSE))
+
 out_dir <- file.path("output", "icu_day_timing")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
@@ -479,10 +528,12 @@ paths <- c(
   first_culture_timing_bins = file.path(out_dir, glue("first_culture_timing_bins_{site_name}_{stamp}.csv")),
   icu_day_event_rates = file.path(out_dir, glue("icu_day_culture_event_rates_{site_name}_{stamp}.csv")),
   cumulative_first_culture_by_day = file.path(out_dir, glue("cumulative_first_culture_by_icu_day_{site_name}_{stamp}.csv")),
+  cumulative_culture_events_by_type_day = file.path(out_dir, glue("cumulative_culture_events_by_type_icu_day_{site_name}_{stamp}.csv")),
   monthly_type_rate_plot = file.path(out_dir, glue("monthly_specimen_type_culture_rates_stacked_per_100_icu_days_{site_name}_{stamp}.png")),
   first_culture_timing_plot = file.path(out_dir, glue("first_culture_timing_by_specimen_type_{site_name}_{stamp}.png")),
   cumulative_first_culture_plot = file.path(out_dir, glue("cumulative_first_culture_by_icu_day_{site_name}_{stamp}.png")),
-  icu_day_event_rate_plot = file.path(out_dir, glue("icu_day_culture_event_rates_per_100_icu_admissions_at_risk_{site_name}_{stamp}.png"))
+  icu_day_event_rate_plot = file.path(out_dir, glue("icu_day_culture_event_rates_per_100_icu_admissions_at_risk_{site_name}_{stamp}.png")),
+  cumulative_events_by_type_plot = file.path(out_dir, glue("cumulative_culture_events_by_type_icu_day_{site_name}_{stamp}.png"))
 )
 
 write_csv(monthly_icu_days, paths[["monthly_icu_days"]])
@@ -492,11 +543,13 @@ write_csv(first_culture_timing, paths[["first_culture_timing"]])
 write_csv(timing_bin_summary, paths[["first_culture_timing_bins"]])
 write_csv(icu_day_event_rates, paths[["icu_day_event_rates"]])
 write_csv(cumulative_first_culture_by_day, paths[["cumulative_first_culture_by_day"]])
+write_csv(cumulative_culture_events_by_type_day, paths[["cumulative_culture_events_by_type_day"]])
 
 ggsave(paths[["monthly_type_rate_plot"]], p_icu_day_rate_stacked, width = 12, height = 7, dpi = 300)
 ggsave(paths[["first_culture_timing_plot"]], p_timing_bins, width = 10, height = 7, dpi = 300)
 ggsave(paths[["cumulative_first_culture_plot"]], p_cumulative_first_culture, width = 10, height = 6, dpi = 300)
 ggsave(paths[["icu_day_event_rate_plot"]], p_icu_day_event_rates, width = 10, height = 6, dpi = 300)
+ggsave(paths[["cumulative_events_by_type_plot"]], p_cumulative_events_by_type, width = 11, height = 7, dpi = 300)
 
 message("ICU-day denominator summary:")
 print(monthly_icu_days %>% summarise(
