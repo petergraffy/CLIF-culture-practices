@@ -102,7 +102,7 @@ After cohort identification, run:
 Rscript code/08_organism_trends.R
 ```
 
-This screens top organisms and targeted resistance phenotypes for monthly detection-rate trends per 100 ICU admissions and per 100 ICU days. Trend plots are color-coded by organism taxonomy. When `microbiology_susceptibility` is available, MRSA, VRE, and CRE are derived from resistant antimicrobial susceptibility results; otherwise, the script falls back to explicit resistance terms in organism text and writes an aggregate source summary.
+This screens top organisms and targeted resistance phenotypes for monthly detection-rate trends per 100 ICU admissions and per 100 ICU days. It writes fastest-increasing and fastest-decreasing organism plots, with plotted-organism summary CSVs for each direction. Trend plots are color-coded by organism taxonomy. When `microbiology_susceptibility` is available, MRSA, VRE, and CRE are derived from resistant antimicrobial susceptibility results; otherwise, the script falls back to explicit resistance terms in organism text and writes an aggregate source summary.
 
 ## Recommended Multi-Site Run
 

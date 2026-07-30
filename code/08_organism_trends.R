@@ -2,7 +2,7 @@
 # Organism Detection Trend Screen
 #
 # Question:
-#   Which organisms or targeted resistance-related organism labels are increasing over calendar time?
+#   Which organisms or targeted resistance-related organism labels are increasing or decreasing over calendar time?
 #
 # Denominators:
 #   1. All ICU admissions, defined as merged ICU ADT intervals and counted by ICU admission month.
@@ -378,6 +378,7 @@ study_start_date <- config_value(config, c("study_start_date", "plot_start_date"
 study_end_date <- config_value(config, c("study_end_date", "plot_end_date"), env = "STUDY_END_DATE", default = Sys.getenv("PLOT_END_DATE", unset = NA_character_))
 top_n_organisms <- as.integer(Sys.getenv("TOP_N_TREND_ORGANISMS", unset = "25"))
 plot_n_increasing <- as.integer(Sys.getenv("PLOT_N_INCREASING_ORGANISMS", unset = "12"))
+plot_n_decreasing <- as.integer(Sys.getenv("PLOT_N_DECREASING_ORGANISMS", unset = as.character(plot_n_increasing)))
 
 if (is.na(row_path) || !nzchar(row_path)) {
   row_path <- latest_project_intermediate_file("^icu_culture_rows_.*\\.csv$", "cohort")
@@ -555,6 +556,12 @@ increasing_labels <- trend_summary_top_admissions %>%
   slice_head(n = plot_n_increasing) %>%
   pull(organism_label)
 
+decreasing_labels <- trend_summary_top_admissions %>%
+  filter(total_detection_events >= 25, !is.na(annual_percent_change)) %>%
+  arrange(annual_percent_change) %>%
+  slice_head(n = plot_n_decreasing) %>%
+  pull(organism_label)
+
 target_plot_labels <- target_monthly_rates %>%
   group_by(organism_label) %>%
   summarise(total_detection_events = max(total_detection_events, na.rm = TRUE), .groups = "drop") %>%
@@ -584,6 +591,16 @@ plot_increasing_admissions_data <- prepare_plot_data(
 plot_increasing_icu_days_data <- prepare_plot_data(
   top_monthly_rates,
   increasing_labels,
+  "detection_events_per_100_icu_days"
+)
+plot_decreasing_admissions_data <- prepare_plot_data(
+  top_monthly_rates,
+  decreasing_labels,
+  "detection_events_per_100_icu_admissions"
+)
+plot_decreasing_icu_days_data <- prepare_plot_data(
+  top_monthly_rates,
+  decreasing_labels,
   "detection_events_per_100_icu_days"
 )
 plot_target_admissions_data <- prepare_plot_data(
@@ -630,8 +647,12 @@ paths <- c(
   monthly_top_rates = file.path(out_dir, glue("monthly_top_organism_detection_rates_{site_name}_{stamp}.csv")),
   monthly_target_rates = file.path(out_dir, glue("monthly_target_organism_detection_rates_{site_name}_{stamp}.csv")),
   monthly_icu_denominators = file.path(out_dir, glue("monthly_icu_denominators_for_organism_trends_{site_name}_{stamp}.csv")),
+  plotted_increasing_organisms = file.path(out_dir, glue("fastest_increasing_organisms_plotted_{site_name}_{stamp}.csv")),
+  plotted_decreasing_organisms = file.path(out_dir, glue("fastest_decreasing_organisms_plotted_{site_name}_{stamp}.csv")),
   increasing_plot_admissions = file.path(out_dir, glue("monthly_fastest_increasing_organism_detection_rates_per_100_icu_admissions_{site_name}_{stamp}.png")),
   increasing_plot_icu_days = file.path(out_dir, glue("monthly_fastest_increasing_organism_detection_rates_per_100_icu_days_{site_name}_{stamp}.png")),
+  decreasing_plot_admissions = file.path(out_dir, glue("monthly_fastest_decreasing_organism_detection_rates_per_100_icu_admissions_{site_name}_{stamp}.png")),
+  decreasing_plot_icu_days = file.path(out_dir, glue("monthly_fastest_decreasing_organism_detection_rates_per_100_icu_days_{site_name}_{stamp}.png")),
   target_plot_admissions = file.path(out_dir, glue("monthly_target_organism_detection_rates_per_100_icu_admissions_{site_name}_{stamp}.png")),
   target_plot_icu_days = file.path(out_dir, glue("monthly_target_organism_detection_rates_per_100_icu_days_{site_name}_{stamp}.png"))
 )
@@ -644,6 +665,14 @@ write_csv(target_detection_source_summary, paths[["target_detection_source_summa
 write_csv(top_monthly_rates, paths[["monthly_top_rates"]])
 write_csv(target_monthly_rates, paths[["monthly_target_rates"]])
 write_csv(monthly_icu_denominators, paths[["monthly_icu_denominators"]])
+write_csv(
+  trend_summary_top_admissions %>% filter(organism_label %in% increasing_labels),
+  paths[["plotted_increasing_organisms"]]
+)
+write_csv(
+  trend_summary_top_admissions %>% filter(organism_label %in% decreasing_labels),
+  paths[["plotted_decreasing_organisms"]]
+)
 
 p_increasing_admissions <- plot_trend_facets(
   plot_increasing_admissions_data,
@@ -654,6 +683,18 @@ p_increasing_admissions <- plot_trend_facets(
 p_increasing_icu_days <- plot_trend_facets(
   plot_increasing_icu_days_data,
   "Fastest Increasing Organism Detection Rates per 100 ICU Days",
+  "Detection events per 100 ICU days",
+  ncol = 3
+)
+p_decreasing_admissions <- plot_trend_facets(
+  plot_decreasing_admissions_data,
+  "Fastest Decreasing Organism Detection Rates per 100 ICU Admissions",
+  "Detection events per 100 ICU admissions",
+  ncol = 3
+)
+p_decreasing_icu_days <- plot_trend_facets(
+  plot_decreasing_icu_days_data,
+  "Fastest Decreasing Organism Detection Rates per 100 ICU Days",
   "Detection events per 100 ICU days",
   ncol = 3
 )
@@ -672,6 +713,8 @@ p_targets_icu_days <- plot_trend_facets(
 
 ggsave(paths[["increasing_plot_admissions"]], p_increasing_admissions, width = 14, height = 12, dpi = 300)
 ggsave(paths[["increasing_plot_icu_days"]], p_increasing_icu_days, width = 14, height = 12, dpi = 300)
+ggsave(paths[["decreasing_plot_admissions"]], p_decreasing_admissions, width = 14, height = 12, dpi = 300)
+ggsave(paths[["decreasing_plot_icu_days"]], p_decreasing_icu_days, width = 14, height = 12, dpi = 300)
 ggsave(paths[["target_plot_admissions"]], p_targets_admissions, width = 12, height = 10, dpi = 300)
 ggsave(paths[["target_plot_icu_days"]], p_targets_icu_days, width = 12, height = 10, dpi = 300)
 
@@ -683,12 +726,16 @@ print(paths[c(
   "trend_summary_targets_icu_days",
   "target_detection_source_summary",
   "monthly_top_rates",
-  "monthly_target_rates"
+  "monthly_target_rates",
+  "plotted_increasing_organisms",
+  "plotted_decreasing_organisms"
 )])
 message("Wrote plots:")
 print(paths[c(
   "increasing_plot_admissions",
   "increasing_plot_icu_days",
+  "decreasing_plot_admissions",
+  "decreasing_plot_icu_days",
   "target_plot_admissions",
   "target_plot_icu_days"
 )])
@@ -696,6 +743,16 @@ print(paths[c(
 message("Top increasing organisms by annual percent change:")
 print(
   trend_summary_top_admissions %>%
+    select(organism_label, total_detection_events, annual_percent_change, p_value, trend_direction) %>%
+    head(15),
+  n = 15,
+  width = Inf
+)
+
+message("Top decreasing organisms by annual percent change:")
+print(
+  trend_summary_top_admissions %>%
+    arrange(annual_percent_change) %>%
     select(organism_label, total_detection_events, annual_percent_change, p_value, trend_direction) %>%
     head(15),
   n = 15,
