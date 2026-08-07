@@ -291,28 +291,8 @@ monthly_result_status_rates <- icu_culture_events %>%
   ) %>%
   arrange(calendar_month, culture_result)
 
-culture_type_palette <- c(
-  "Blood buffy" = "#FB8072",
-  "Respiratory tract" = "#BC80BD",
-  "Genito urinary tract" = "#FDB462",
-  "Meninges csf" = "#8DD3C7",
-  "Pleural cavity fluid" = "#BEBADA",
-  "Respiratory tract lower" = "#B3DE69",
-  "Woundsite" = "#FCCDE5",
-  "Catheter tip" = "#80B1D3",
-  "Other" = "#BDBDBD"
-)
 specimen_type_levels <- levels(monthly_culture_events_by_type$specimen_type)
-extra_specimen_types <- setdiff(specimen_type_levels, names(culture_type_palette))
-extra_palette <- if (length(extra_specimen_types) > 0) {
-  setNames(
-    grDevices::colorRampPalette(c("#FB8072", "#BC80BD", "#FDB462", "#8DD3C7", "#80B1D3", "#BEBADA", "#B3DE69", "#FCCDE5"))(length(extra_specimen_types)),
-    extra_specimen_types
-  )
-} else {
-  character()
-}
-available_palette <- c(culture_type_palette, extra_palette)[specimen_type_levels]
+available_palette <- clif_complete_specimen_palette(specimen_type_levels)
 result_status_palette <- c("Negative" = "#8F8F8F", "Positive" = "#B44E4E")
 
 plot_theme <- theme_classic(base_size = 12) +

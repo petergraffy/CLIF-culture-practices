@@ -44,6 +44,60 @@ latest_project_intermediate_file <- function(pattern, ...) {
   files[which.max(file.info(files)$mtime)]
 }
 
+clif_specimen_type_palette <- c(
+  "Blood buffy" = "#FB8072",
+  "Nasopharynx upperairway" = "#80B1D3",
+  "Respiratory tract" = "#BC80BD",
+  "Genito urinary tract" = "#FDB462",
+  "Respiratory tract lower" = "#B3DE69",
+  "Meninges csf" = "#8DD3C7",
+  "Pleural cavity fluid" = "#BEBADA",
+  "Peritoneum" = "#FCCDE5",
+  "Woundsite" = "#CCEBC5",
+  "Other unspecified" = "#FFFFB3",
+  "Catheter tip" = "#FFED6F",
+  "Joints" = "#A6CEE3",
+  "Feces stool" = "#B2DF8A",
+  "Cardiac" = "#FDBF6F",
+  "Gallbladder billary pancreas" = "#CAB2D6",
+  "Gastrointestinal tract" = "#FFFF99",
+  "Oropharynx tongue oralcavity" = "#1F78B4",
+  "Skin" = "#33A02C",
+  "Ears" = "#E31A1C",
+  "Bone cortex" = "#FF7F00",
+  "Eyes" = "#6A3D9A",
+  "Bone marrow" = "#B15928",
+  "Kidneys renal pelvis ureters bladder" = "#A1D99B",
+  "Genital area" = "#9E9AC8",
+  "Vagina" = "#FDD0A2",
+  "Stomach" = "#9ECAE1",
+  "Lymph nodes" = "#F2B6C6",
+  "Fallopians uterus cervix" = "#C49C94",
+  "Other" = "#BDBDBD",
+  "No ICU culture" = "#C7C7C7"
+)
+
+clif_complete_specimen_palette <- function(specimen_levels, include_no_icu = FALSE) {
+  specimen_levels <- as.character(specimen_levels)
+  if (!include_no_icu) {
+    base_palette <- clif_specimen_type_palette[names(clif_specimen_type_palette) != "No ICU culture"]
+  } else {
+    base_palette <- clif_specimen_type_palette
+  }
+
+  missing_levels <- setdiff(specimen_levels, names(base_palette))
+  if (length(missing_levels) > 0) {
+    fallback_colors <- grDevices::hcl.colors(
+      n = length(missing_levels),
+      palette = "Dark 3",
+      alpha = 1
+    )
+    base_palette <- c(base_palette, stats::setNames(fallback_colors, missing_levels))
+  }
+
+  base_palette[names(base_palette) %in% specimen_levels]
+}
+
 read_any <- function(path) {
   ext <- tolower(tools::file_ext(path))
   out <- switch(

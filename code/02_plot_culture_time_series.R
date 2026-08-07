@@ -256,17 +256,7 @@ plot_theme <- theme_classic(base_size = 12) +
     plot.caption.position = "plot"
   )
 month_bar_width <- 25 * 24 * 60 * 60
-culture_type_palette <- c(
-  "Blood buffy" = "#FB8072",
-  "Respiratory tract" = "#BC80BD",
-  "Genito urinary tract" = "#FDB462",
-  "Meninges csf" = "#8DD3C7",
-  "Other unspecified" = "#80B1D3",
-  "Pleural cavity fluid" = "#BEBADA",
-  "Respiratory tract lower" = "#B3DE69",
-  "Woundsite" = "#FCCDE5",
-  "Other" = "#BDBDBD"
-)
+culture_type_palette <- clif_specimen_type_palette
 five_panel_palette <- c(
   "Overall" = "#333333",
   "Blood buffy" = culture_type_palette[["Blood buffy"]],
@@ -274,7 +264,7 @@ five_panel_palette <- c(
   "Respiratory tract" = culture_type_palette[["Respiratory tract"]],
   "Other" = culture_type_palette[["Other"]]
 )
-available_palette <- culture_type_palette[names(culture_type_palette) %in% levels(monthly_by_type$culture_type)]
+available_palette <- clif_complete_specimen_palette(levels(monthly_by_type$culture_type))
 
 monthly_by_type_stacked <- monthly_by_type %>%
   mutate(culture_type = fct_collapse(culture_type, Other = c("Other", "Other unspecified"))) %>%
@@ -289,7 +279,7 @@ monthly_by_type_stacked <- monthly_by_type %>%
   ) %>%
   mutate(culture_type = fct_relevel(factor(culture_type), "Other", after = Inf))
 
-stacked_palette <- culture_type_palette[names(culture_type_palette) %in% levels(monthly_by_type_stacked$culture_type)]
+stacked_palette <- clif_complete_specimen_palette(levels(monthly_by_type_stacked$culture_type))
 
 p_overall_volume <- ggplot(monthly_overall, aes(culture_month, n_events)) +
   geom_col(fill = "#2f6f73", width = month_bar_width) +
@@ -379,9 +369,7 @@ p_fluid_category_positivity_facets <- monthly_positivity_by_fluid_category %>%
   guides(fill = guide_legend(ncol = 4, byrow = TRUE))
 
 fluid_category_positivity_levels <- levels(monthly_positivity_by_fluid_category$fluid_category_label)
-fluid_category_positivity_palette <- culture_type_palette[
-  names(culture_type_palette) %in% fluid_category_positivity_levels
-]
+fluid_category_positivity_palette <- clif_complete_specimen_palette(fluid_category_positivity_levels)
 
 p_fluid_category_positivity_overlay <- monthly_positivity_by_fluid_category %>%
   filter(n_events > 0) %>%

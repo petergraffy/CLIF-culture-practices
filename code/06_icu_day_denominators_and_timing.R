@@ -474,29 +474,9 @@ cumulative_top_organism_incidence_hour <- top_organisms %>%
   ) %>%
   arrange(organism_label, icu_hour)
 
-culture_type_palette <- c(
-  "Blood buffy" = "#FB8072",
-  "Respiratory tract" = "#BC80BD",
-  "Genito urinary tract" = "#FDB462",
-  "Meninges csf" = "#8DD3C7",
-  "Pleural cavity fluid" = "#BEBADA",
-  "Respiratory tract lower" = "#B3DE69",
-  "Woundsite" = "#FCCDE5",
-  "Catheter tip" = "#80B1D3",
-  "Other" = "#BDBDBD",
-  "No ICU culture" = "#C7C7C7"
-)
+culture_type_palette <- clif_specimen_type_palette
 specimen_levels <- levels(monthly_events_by_type_per_icu_day$specimen_type)
-extra_specimen_types <- setdiff(specimen_levels, names(culture_type_palette))
-extra_palette <- if (length(extra_specimen_types) > 0) {
-  setNames(
-    grDevices::colorRampPalette(c("#FB8072", "#BC80BD", "#FDB462", "#8DD3C7", "#80B1D3", "#B3DE69", "#BEBADA", "#FCCDE5"))(length(extra_specimen_types)),
-    extra_specimen_types
-  )
-} else {
-  character()
-}
-available_palette <- c(culture_type_palette, extra_palette)[specimen_levels]
+available_palette <- clif_complete_specimen_palette(specimen_levels)
 
 plot_theme <- theme_classic(base_size = 12) +
   theme(
@@ -545,7 +525,7 @@ p_timing_bins <- timing_bin_summary %>%
   ) %>%
   ggplot(aes(timing_bin, percent_icu_admissions, fill = first_specimen_type)) +
   geom_col(color = "white", linewidth = 0.15) +
-  scale_fill_manual(values = c(culture_type_palette, extra_palette)) +
+  scale_fill_manual(values = clif_complete_specimen_palette(unique(timing_bin_summary$first_specimen_type), include_no_icu = TRUE)) +
   scale_y_continuous(labels = label_number(suffix = "%"), limits = c(0, NA)) +
   labs(
     title = "Timing of First ICU Culture",
