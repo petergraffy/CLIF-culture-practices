@@ -25,3 +25,13 @@ Common environment variable overrides:
 All standard script outputs are written under `<repo>/output/`. Private row-level intermediates are written under `<repo>/data/intermediate/` and are read automatically by downstream scripts.
 
 The `.gitignore` file prevents `config/config.json` from being pushed to GitHub. Keep site-specific paths and credentials local.
+
+## Optional analyses and mapping corrections
+
+Susceptibility uses canonical CLIF mCIDE fields and the pinned reference CSVs in `mcide/`. Sites without the table skip this analysis. Set `AST_MIN_TESTING_FRACTION` (default 0.5) to control minimum interpretable testing coverage for detection-rate models.
+
+`specimen_category_overrides.csv` is initially empty. Add only source-verified exact fluid-name/original-category/date-range corrections, with a documented reason. No mapping is inferred from an order name alone.
+
+Use `Rscript code/00_run_pipeline.R` for isolated run directories and manifests. See [analysis definitions](../docs/analysis_definitions.md).
+
+Copy `pooling_sites_template.csv` to the ignored local `pooling_sites.csv` to register reviewed aggregate runs for central pooling. Specify validated observation dates and culture/AST QC eligibility per site. See `docs/pooling.md`; do not declare unresolved mappings validated.

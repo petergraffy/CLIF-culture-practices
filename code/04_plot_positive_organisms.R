@@ -22,19 +22,6 @@ suppressPackageStartupMessages({
 
 source("utils/clif_io.R")
 
-safe_ts <- function(x, tz = "UTC") {
-  if (inherits(x, "POSIXt")) return(as.POSIXct(x, tz = tz))
-  if (is.numeric(x)) {
-    x2 <- ifelse(x > 1e12, x / 1000, x)
-    return(as.POSIXct(x2, origin = "1970-01-01", tz = tz))
-  }
-  suppressWarnings(lubridate::parse_date_time(
-    x,
-    orders = c("ymd_HMS", "ymd_HM", "ymd", "ymdTz", "ymdT", "mdy_HMS", "mdy_HM", "mdy"),
-    tz = tz,
-    quiet = TRUE
-  ))
-}
 
 clean_label <- function(x) {
   x %>%
@@ -56,46 +43,10 @@ read_clif_table_for_denominator <- function(tbl_base) {
 }
 
 build_monthly_icu_admissions <- function(month_seq, plot_start_dttm, plot_end_dttm) {
-  hospitalization <- read_clif_table_for_denominator("hospitalization") %>%
-    transmute(
-      patient_id,
-      hospitalization_id,
-      admission_dttm = safe_ts(admission_dttm),
-      discharge_dttm = safe_ts(discharge_dttm)
-    )
+  end_exclusive <- plot_end_dttm
+  stays <- read_culture_data(plot_start_dttm, end_exclusive)$icu_admissions
+  monthly_icu_denominators(stays, month_seq) %>% select(calendar_month, n_icu_admissions) %>% rename(culture_month = calendar_month)
 
-  adt <- read_clif_table_for_denominator("adt") %>%
-    transmute(
-      hospitalization_id,
-      icu_in_dttm = safe_ts(in_dttm),
-      icu_out_dttm_raw = safe_ts(out_dttm),
-      location_category = str_to_lower(str_trim(as.character(location_category)))
-    )
-
-  adt %>%
-    filter(location_category == "icu", !is.na(icu_in_dttm)) %>%
-    left_join(hospitalization, by = "hospitalization_id") %>%
-    mutate(icu_out_dttm = coalesce(icu_out_dttm_raw, discharge_dttm)) %>%
-    filter(!is.na(patient_id), !is.na(icu_out_dttm), icu_out_dttm > icu_in_dttm) %>%
-    arrange(patient_id, hospitalization_id, icu_in_dttm, icu_out_dttm) %>%
-    group_by(patient_id, hospitalization_id) %>%
-    mutate(
-      prior_max_icu_out_num = lag(cummax(as.numeric(icu_out_dttm))),
-      new_icu_admission = is.na(prior_max_icu_out_num) | as.numeric(icu_in_dttm) > prior_max_icu_out_num,
-      icu_admission_seq = cumsum(new_icu_admission)
-    ) %>%
-    group_by(patient_id, hospitalization_id, icu_admission_seq) %>%
-    summarise(
-      icu_in_dttm = min(icu_in_dttm, na.rm = TRUE),
-      icu_out_dttm = max(icu_out_dttm, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    mutate(icu_admission_month = floor_date(icu_in_dttm, "month")) %>%
-    filter(is.na(plot_start_dttm) | icu_in_dttm >= plot_start_dttm) %>%
-    filter(is.na(plot_end_dttm) | icu_in_dttm <= plot_end_dttm) %>%
-    count(icu_admission_month, name = "n_icu_admissions") %>%
-    complete(icu_admission_month = month_seq, fill = list(n_icu_admissions = 0L)) %>%
-    rename(culture_month = icu_admission_month)
 }
 
 add_icu_admission_rates <- function(data, monthly_icu_admissions) {
@@ -236,19 +187,7 @@ clif_organism_group_type_map <- c(
 classify_organism_type <- function(x) {
   x_clean <- str_to_lower(coalesce(x, ""))
   exact_match <- unname(clif_organism_group_type_map[x_clean])
-  fallback <- case_when(
-    str_detect(x_clean, "candida|yeast|fung|aspergillus|cryptococcus|mold|mould|saccharomyces|fusarium|mucor|rhizopus|pneumocystis|torulopsis") ~ "Fungi/yeast",
-    str_detect(x_clean, "mycobacter|tuberculosis|\\bafb\\b|acid fast") ~ "Mycobacteria/AFB",
-    str_detect(x_clean, "anaerob|bacteroides|clostrid|prevotella|fusobacter|cutibacter|propionibacter|propionbacterium|leptotrichia") ~ "Anaerobes",
-    str_detect(x_clean, "amebiasis|cryptosporidium|echinoco|giardia|protozo|toxoplasma|trichomonas|parasite") ~ "Parasite/protozoa",
-    str_detect(x_clean, "adenovirus|cytomegalovirus|enterovirus|epstein|hepatitis|herpes|hhv|hiv|influenza|measles|mumps|papovavirus|parainfluenza|polyomavirus|respiratory_syncytial|rsv|rhinovirus|rotavirus|rubella|virus|viral|covid|sars|cmv") ~ "Virus",
-    str_detect(x_clean, "borrelia|chlamydia|coxiella|leptospira|mycoplasma|rickettsia|treponema") ~ "Atypical/other bacteria",
-    str_detect(x_clean, "staphylococcus|streptococcus|enterococcus|bacillus|corynebacter|lactobacillus|listeria|leuconostoc|micrococcus|nocardia|rhodococcus|stomatococcus|gram_positive|gram positive|gpc|coag_pos|coag_neg|coagneg") ~ "Gram positive bacteria",
-    str_detect(x_clean, "acinetobacter|agrobacterium|alcaligenes|branhamelia|moraxella|pseudomonas|stenotrophomonas|xanthomonas|klebsiella|enterobacter|escherichia|serratia|haemophilus|citrobacter|proteus|neisseria|salmonella|shigella|campylobacter|burkholderia|cepacia|legionella|flavimonas|flavobacterium|helicobacter|methylobacterium|vibrio|gram_negative|gram negative|gnr") ~ "Gram negative bacteria",
-    str_detect(x_clean, "no_growth|no growth") ~ "No growth/negative",
-    str_detect(x_clean, "bacteria|gram|cocci|bacilli|rods|flora") ~ "Other bacteria",
-    TRUE ~ "Other/unspecified"
-  )
+  fallback <- classify_microbe_taxonomy(x_clean)
   coalesce(exact_match, fallback)
 }
 
@@ -361,7 +300,7 @@ if (is.na(row_path) || !nzchar(row_path)) {
 
 message("Reading ICU culture rows: ", row_path)
 
-rows <- readr::read_csv(row_path, show_col_types = FALSE) %>%
+rows <- read_clif_csv(row_path, show_col_types = FALSE) %>%
   mutate(
     collect_dttm = safe_ts(collect_dttm),
     culture_month = floor_date(collect_dttm, "month"),
@@ -379,12 +318,12 @@ rows <- readr::read_csv(row_path, show_col_types = FALSE) %>%
   )
 
 plot_start_dttm <- if (!is.na(plot_start_date) && nzchar(plot_start_date)) safe_ts(plot_start_date) else as.POSIXct(NA)
-plot_end_dttm <- if (!is.na(plot_end_date) && nzchar(plot_end_date)) safe_ts(plot_end_date) + days(1) - seconds(1) else as.POSIXct(NA)
+plot_end_dttm <- if (!is.na(plot_end_date) && nzchar(plot_end_date)) safe_ts(plot_end_date) + days(1) else as.POSIXct(NA)
 
 positive_rows <- rows %>%
   filter(positive_culture, !explicit_negative_name) %>%
   filter(is.na(plot_start_dttm) | collect_dttm >= plot_start_dttm) %>%
-  filter(is.na(plot_end_dttm) | collect_dttm <= plot_end_dttm)
+  filter(is.na(plot_end_dttm) | collect_dttm < plot_end_dttm)
 
 if (nrow(positive_rows) == 0) {
   stop("No positive organism rows after filters.")
@@ -406,7 +345,7 @@ summarise_detection <- function(data, organism_var, label_var) {
     group_by(.data[[organism_var]], .data[[label_var]]) %>%
     summarise(
       n_detection_rows = n(),
-      n_culture_events = n_distinct(paste(patient_id, hospitalization_id, icu_interval_id, collect_dttm, fluid_name, method_name)),
+      n_culture_events = n_distinct(culture_event_id),
       n_hospitalizations = n_distinct(hospitalization_id),
       n_patients = n_distinct(patient_id),
       .groups = "drop"
@@ -422,7 +361,7 @@ summarise_detection_by_type <- function(data, organism_var, label_var) {
     group_by(culture_type = culture_type_plot, .data[[organism_var]], .data[[label_var]]) %>%
     summarise(
       n_detection_rows = n(),
-      n_culture_events = n_distinct(paste(patient_id, hospitalization_id, icu_interval_id, collect_dttm, fluid_name, method_name)),
+      n_culture_events = n_distinct(culture_event_id),
       n_hospitalizations = n_distinct(hospitalization_id),
       n_patients = n_distinct(patient_id),
       .groups = "drop"
@@ -460,7 +399,7 @@ monthly_detection <- function(data, organism_var, label_var, top_data) {
     group_by(culture_month, !!organism_sym, organism_label) %>%
     summarise(
       n_detection_rows = n(),
-      n_culture_events = n_distinct(paste(patient_id, hospitalization_id, icu_interval_id, collect_dttm, fluid_name, method_name)),
+      n_culture_events = n_distinct(culture_event_id),
       .groups = "drop"
     ) %>%
     complete(
@@ -485,7 +424,7 @@ monthly_detection_by_type <- function(data, organism_var, label_var, top_data) {
     group_by(culture_month, culture_type = culture_type_plot, !!organism_sym, organism_label) %>%
     summarise(
       n_detection_rows = n(),
-      n_culture_events = n_distinct(paste(patient_id, hospitalization_id, icu_interval_id, collect_dttm, fluid_name, method_name)),
+      n_culture_events = n_distinct(culture_event_id),
       .groups = "drop"
     ) %>%
     complete(
@@ -535,7 +474,7 @@ monthly_detection_five_panel <- function(data, organism_var, label_var, top_data
     group_by(culture_month, culture_panel, !!organism_sym, organism_label) %>%
     summarise(
       n_detection_rows = n(),
-      n_culture_events = n_distinct(paste(patient_id, hospitalization_id, icu_interval_id, collect_dttm, fluid_name, method_name)),
+      n_culture_events = n_distinct(culture_event_id),
       .groups = "drop"
     ) %>%
     complete(

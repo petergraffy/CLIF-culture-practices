@@ -29,19 +29,6 @@ suppressPackageStartupMessages({
 
 source("utils/clif_io.R")
 
-safe_ts <- function(x, tz = "UTC") {
-  if (inherits(x, "POSIXt")) return(as.POSIXct(x, tz = tz))
-  if (is.numeric(x)) {
-    x2 <- ifelse(x > 1e12, x / 1000, x)
-    return(as.POSIXct(x2, origin = "1970-01-01", tz = tz))
-  }
-  suppressWarnings(lubridate::parse_date_time(
-    x,
-    orders = c("ymd_HMS", "ymd_HM", "ymd", "ymdTz", "ymdT", "mdy_HMS", "mdy_HM", "mdy"),
-    tz = tz,
-    quiet = TRUE
-  ))
-}
 
 clean_label <- function(x) {
   x %>%
@@ -75,144 +62,19 @@ timing_max_hour <- as.integer(Sys.getenv("TIMING_MAX_ICU_HOUR", unset = "168"))
 top_n_organisms <- as.integer(Sys.getenv("TOP_N_TIMING_ORGANISMS", unset = "10"))
 
 study_start_dttm <- if (!is.na(study_start_date) && nzchar(study_start_date)) safe_ts(study_start_date) else as.POSIXct(NA)
-study_end_dttm <- if (!is.na(study_end_date) && nzchar(study_end_date)) safe_ts(study_end_date) + days(1) - seconds(1) else as.POSIXct(NA)
+study_end_dttm <- if (!is.na(study_end_date) && nzchar(study_end_date)) safe_ts(study_end_date) + days(1) else as.POSIXct(NA)
 
 message("Using CLIF tables: ", tables_path)
 if (!is.na(study_start_dttm)) message("Study start: ", study_start_dttm)
 if (!is.na(study_end_dttm)) message("Study end: ", study_end_dttm)
 
-hospitalization <- read_tbl("hospitalization") %>%
-  transmute(
-    patient_id,
-    hospitalization_id,
-    admission_dttm = safe_ts(admission_dttm),
-    discharge_dttm = safe_ts(discharge_dttm)
-  )
-
-adt <- read_tbl("adt") %>%
-  transmute(
-    hospitalization_id,
-    icu_in_dttm = safe_ts(in_dttm),
-    icu_out_dttm_raw = safe_ts(out_dttm),
-    location_category = str_to_lower(str_trim(as.character(location_category)))
-  )
-
-icu_adt_intervals <- adt %>%
-  filter(location_category == "icu", !is.na(icu_in_dttm)) %>%
-  left_join(hospitalization, by = "hospitalization_id") %>%
-  mutate(
-    icu_out_dttm = coalesce(icu_out_dttm_raw, discharge_dttm),
-    icu_interval_missing_out = is.na(icu_out_dttm_raw)
-  ) %>%
-  filter(!is.na(patient_id), !is.na(icu_out_dttm), icu_out_dttm > icu_in_dttm) %>%
-  arrange(patient_id, hospitalization_id, icu_in_dttm, icu_out_dttm)
-
-icu_admissions <- icu_adt_intervals %>%
-  group_by(patient_id, hospitalization_id) %>%
-  mutate(
-    prior_max_icu_out_num = lag(cummax(as.numeric(icu_out_dttm))),
-    new_icu_admission = is.na(prior_max_icu_out_num) | as.numeric(icu_in_dttm) > prior_max_icu_out_num,
-    icu_admission_seq = cumsum(new_icu_admission)
-  ) %>%
-  group_by(patient_id, hospitalization_id, icu_admission_seq) %>%
-  summarise(
-    admission_dttm = first(admission_dttm),
-    discharge_dttm = first(discharge_dttm),
-    icu_in_dttm = min(icu_in_dttm, na.rm = TRUE),
-    icu_out_dttm = max(icu_out_dttm, na.rm = TRUE),
-    icu_interval_missing_out = any(icu_interval_missing_out, na.rm = TRUE),
-    n_icu_adt_rows = n(),
-    .groups = "drop"
-  ) %>%
-  arrange(patient_id, hospitalization_id, icu_in_dttm) %>%
-  mutate(
-    icu_admission_id = row_number(),
-    icu_admission_month = floor_date(icu_in_dttm, "month"),
-    icu_in_dttm_clipped = clip_ts(icu_in_dttm, study_start_dttm, study_end_dttm),
-    icu_out_dttm_clipped = clip_ts(icu_out_dttm, study_start_dttm, study_end_dttm)
-  ) %>%
-  filter(icu_out_dttm_clipped > icu_in_dttm_clipped) %>%
-  mutate(icu_los_days = as.numeric(difftime(icu_out_dttm_clipped, icu_in_dttm_clipped, units = "days")))
-
-if (nrow(icu_admissions) == 0) stop("No ICU admissions after filters.")
-
-microbiology_culture <- read_tbl("microbiology_culture") %>%
-  mutate(microbiology_row_id = row_number(), .before = 1) %>%
-  transmute(
-    microbiology_row_id,
-    patient_id,
-    hospitalization_id,
-    order_dttm = safe_ts(order_dttm),
-    collect_dttm = safe_ts(collect_dttm),
-    fluid_name = str_to_lower(str_trim(as.character(fluid_name))),
-    fluid_category = str_to_lower(str_trim(as.character(fluid_category))),
-    method_name = str_to_lower(str_trim(as.character(method_name))),
-    method_category = str_to_lower(str_trim(as.character(method_category))),
-    organism_category = if ("organism_category" %in% names(.)) {
-      str_to_lower(str_trim(as.character(organism_category)))
-    } else {
-      NA_character_
-    },
-    organism_group = if ("organism_group" %in% names(.)) {
-      str_to_lower(str_trim(as.character(organism_group)))
-    } else {
-      NA_character_
-    },
-    organism_name = if ("organism_name" %in% names(.)) {
-      str_to_lower(str_trim(as.character(organism_name)))
-    } else {
-      NA_character_
-    }
-  ) %>%
-  mutate(
-    organism_group = coalesce(na_if(organism_group, ""), organism_category),
-    organism_name = coalesce(na_if(organism_name, ""), organism_group),
-    no_growth = organism_group %in% c("no_growth", "no growth"),
-    positive_culture = !is.na(organism_group) & !no_growth
-  ) %>%
-  filter(method_category == "culture", !is.na(collect_dttm)) %>%
-  filter(is.na(study_start_dttm) | collect_dttm >= study_start_dttm) %>%
-  filter(is.na(study_end_dttm) | collect_dttm <= study_end_dttm)
-
-icu_culture_rows <- microbiology_culture %>%
-  inner_join(
-    icu_admissions %>%
-      select(patient_id, hospitalization_id, icu_admission_id, icu_in_dttm, icu_out_dttm),
-    by = c("patient_id", "hospitalization_id"),
-    relationship = "many-to-many"
-  ) %>%
-  filter(collect_dttm >= icu_in_dttm, collect_dttm <= icu_out_dttm) %>%
-  distinct(microbiology_row_id, icu_admission_id, .keep_all = TRUE)
-
-icu_culture_events <- icu_culture_rows %>%
-  group_by(
-    patient_id,
-    hospitalization_id,
-    icu_admission_id,
-    icu_in_dttm,
-    icu_out_dttm,
-    order_dttm,
-    collect_dttm,
-    fluid_name,
-    fluid_category,
-    method_name,
-    method_category
-  ) %>%
-  summarise(
-    n_culture_rows = n(),
-    any_positive_culture = any(positive_culture, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    calendar_month = floor_date(collect_dttm, "month"),
-    specimen_type = clean_label(coalesce(na_if(fluid_category, ""), "missing")),
-    specimen_type = if_else(specimen_type %in% c("Other", "Other unspecified"), "Other", specimen_type),
-    hours_since_icu_admit = as.numeric(difftime(collect_dttm, icu_in_dttm, units = "hours")),
-    icu_day = floor(hours_since_icu_admit / 24) + 1L
-  )
+culture_data <- read_culture_data(study_start_dttm, study_end_dttm)
+icu_admissions <- culture_data$icu_admissions
+icu_culture_rows <- culture_data$rows
+icu_culture_events <- culture_data$events %>% mutate(calendar_month = floor_date(collect_dttm, "month"), specimen_type = clean_label(coalesce(fluid_category, "missing")), specimen_type = if_else(specimen_type %in% c("Other", "Other unspecified"), "Other", specimen_type), hours_since_icu_admit = as.numeric(difftime(collect_dttm, icu_in_dttm, units = "hours")), icu_day = floor(hours_since_icu_admit / 24) + 1L)
 
 month_min <- floor_date(min(icu_admissions$icu_in_dttm_clipped, na.rm = TRUE), "month")
-month_max <- floor_date(max(icu_admissions$icu_out_dttm_clipped, na.rm = TRUE), "month")
+month_max <- floor_date(max(icu_admissions$icu_out_dttm_clipped - seconds(1), na.rm = TRUE), "month")
 month_seq <- seq(month_min, month_max, by = "month")
 
 monthly_icu_days <- icu_admissions %>%
@@ -296,14 +158,16 @@ monthly_overall_per_icu_day <- icu_culture_events %>%
   ) %>%
   arrange(calendar_month)
 
-first_culture_overall <- icu_culture_events %>%
+timing_stays <- icu_admissions %>% filter(is.na(study_start_dttm) | icu_in_dttm >= study_start_dttm)
+timing_events <- icu_culture_events %>% semi_join(timing_stays, by = "icu_admission_id")
+first_culture_overall <- timing_events %>%
   arrange(icu_admission_id, collect_dttm, specimen_type) %>%
   group_by(icu_admission_id) %>%
   slice_head(n = 1) %>%
   ungroup() %>%
   select(icu_admission_id, first_culture_dttm = collect_dttm, first_specimen_type = specimen_type, first_culture_hours = hours_since_icu_admit)
 
-first_culture_timing <- icu_admissions %>%
+first_culture_timing <- timing_stays %>%
   select(icu_admission_id, patient_id, hospitalization_id, icu_in_dttm, icu_out_dttm, icu_los_days) %>%
   left_join(first_culture_overall, by = "icu_admission_id") %>%
   mutate(
@@ -350,11 +214,11 @@ icu_day_at_risk <- tibble(icu_day = seq_len(timing_max_day)) %>%
   mutate(
     n_icu_admissions_at_risk = map_int(
       icu_day,
-      ~ sum(icu_admissions$icu_los_days > (.x - 1), na.rm = TRUE)
+      ~ sum(timing_stays$icu_los_days > (.x - 1), na.rm = TRUE)
     )
   )
 
-icu_day_event_rates <- icu_culture_events %>%
+icu_day_event_rates <- timing_events %>%
   filter(icu_day >= 1, icu_day <= timing_max_day) %>%
   count(icu_day, name = "n_culture_events") %>%
   complete(icu_day = seq_len(timing_max_day), fill = list(n_culture_events = 0L)) %>%
@@ -381,13 +245,13 @@ cumulative_first_culture_by_day <- first_culture_timing %>%
       100 * n_icu_admissions_with_first_culture_by_day / n_icu_admissions
   )
 
-cumulative_culture_events_by_type_hour <- icu_culture_events %>%
+cumulative_culture_events_by_type_hour <- timing_events %>%
   mutate(specimen_type_plot = if_else(specimen_type %in% top_types, specimen_type, "Other")) %>%
   group_by(specimen_type = specimen_type_plot) %>%
   summarise(n_total_culture_events = n(), .groups = "drop") %>%
   crossing(icu_hour = 0:timing_max_hour) %>%
   left_join(
-    icu_culture_events %>%
+    timing_events %>%
       mutate(
         specimen_type = if_else(specimen_type %in% top_types, specimen_type, "Other"),
         event_icu_hour = ceiling(hours_since_icu_admit)
@@ -412,6 +276,7 @@ cumulative_culture_events_by_type_hour <- icu_culture_events %>%
   arrange(specimen_type, icu_hour)
 
 positive_organism_detections <- icu_culture_rows %>%
+  semi_join(timing_stays, by = "icu_admission_id") %>%
   mutate(
     organism_name = coalesce(na_if(organism_name, ""), organism_group, organism_category),
     organism_label = str_to_sentence(str_squish(organism_name)),
@@ -465,7 +330,7 @@ cumulative_top_organism_incidence_hour <- top_organisms %>%
   mutate(
     n_first_detection_icu_admissions = coalesce(n_first_detection_icu_admissions, 0L),
     n_icu_admissions_with_organism_by_hour = coalesce(n_icu_admissions_with_organism_by_hour, 0L),
-    n_icu_admissions = nrow(icu_admissions),
+    n_icu_admissions = nrow(timing_stays),
     site_name = site_name,
     care_setting = "ICU",
     organism_first_collected_per_100_icu_admissions =

@@ -22,15 +22,6 @@ suppressPackageStartupMessages({
 
 source("utils/clif_io.R")
 
-safe_ts <- function(x, tz = "UTC") {
-  if (inherits(x, "POSIXt")) return(as.POSIXct(x, tz = tz))
-  suppressWarnings(lubridate::parse_date_time(
-    x,
-    orders = c("ymd_HMS", "ymd_HM", "ymd", "ymdTz", "ymdT", "mdy_HMS", "mdy_HM", "mdy"),
-    tz = tz,
-    quiet = TRUE
-  ))
-}
 
 clean_label <- function(x) {
   x %>%
@@ -86,7 +77,7 @@ if (is.na(event_path) || !nzchar(event_path)) {
 
 message("Reading ICU culture events: ", event_path)
 
-events <- readr::read_csv(event_path, show_col_types = FALSE) %>%
+events <- read_clif_csv(event_path, show_col_types = FALSE) %>%
   mutate(
     collect_dttm = safe_ts(collect_dttm),
     culture_month = floor_date(collect_dttm, "month"),
@@ -97,11 +88,11 @@ events <- readr::read_csv(event_path, show_col_types = FALSE) %>%
   filter(!is.na(culture_month))
 
 plot_start_dttm <- if (!is.na(plot_start_date) && nzchar(plot_start_date)) safe_ts(plot_start_date) else as.POSIXct(NA)
-plot_end_dttm <- if (!is.na(plot_end_date) && nzchar(plot_end_date)) safe_ts(plot_end_date) + days(1) - seconds(1) else as.POSIXct(NA)
+plot_end_dttm <- if (!is.na(plot_end_date) && nzchar(plot_end_date)) safe_ts(plot_end_date) + days(1) else as.POSIXct(NA)
 
 events <- events %>%
   filter(is.na(plot_start_dttm) | collect_dttm >= plot_start_dttm) %>%
-  filter(is.na(plot_end_dttm) | collect_dttm <= plot_end_dttm)
+  filter(is.na(plot_end_dttm) | collect_dttm < plot_end_dttm)
 
 if (nrow(events) == 0) {
   stop("No events with non-missing collection month.")
@@ -121,12 +112,19 @@ events_plot <- events %>%
 
 month_seq <- seq(min(events$culture_month), max(events$culture_month), by = "month")
 
+monthly_result_status <- events %>% count(culture_month, result_status, name = "n_events")
+write_csv(monthly_result_status, file.path(project_output_dir("time_series"), glue("monthly_culture_result_status_{site_name}_{format(Sys.time(), '%Y%m%d_%H%M%S')}.csv")))
+
 monthly_overall <- events %>%
   group_by(culture_month) %>%
   summarise(
     n_events = n(),
     n_positive_events = sum(any_positive_culture, na.rm = TRUE),
-    positive_event_rate = n_positive_events / n_events,
+    n_negative_events = sum(result_status == "Negative/no growth"),
+    n_mixed_events = sum(result_status == "Mixed/contaminated"),
+    n_indeterminate_events = sum(result_status == "Indeterminate"),
+    n_interpretable_events = sum(result_status %in% c("Positive", "Negative/no growth")),
+    positive_event_rate = if_else(n_interpretable_events > 0, n_positive_events / n_interpretable_events, NA_real_),
     n_hospitalizations = n_distinct(hospitalization_id),
     n_patients = n_distinct(patient_id),
     .groups = "drop"
@@ -137,7 +135,11 @@ monthly_by_type <- events_plot %>%
   summarise(
     n_events = n(),
     n_positive_events = sum(any_positive_culture, na.rm = TRUE),
-    positive_event_rate = n_positive_events / n_events,
+    n_negative_events = sum(result_status == "Negative/no growth"),
+    n_mixed_events = sum(result_status == "Mixed/contaminated"),
+    n_indeterminate_events = sum(result_status == "Indeterminate"),
+    n_interpretable_events = sum(result_status %in% c("Positive", "Negative/no growth")),
+    positive_event_rate = if_else(n_interpretable_events > 0, n_positive_events / n_interpretable_events, NA_real_),
     n_hospitalizations = n_distinct(hospitalization_id),
     n_patients = n_distinct(patient_id),
     .groups = "drop"
@@ -147,13 +149,13 @@ monthly_by_type <- events_plot %>%
     culture_type,
     fill = list(
       n_events = 0L,
-      n_positive_events = 0L,
+      n_positive_events = 0L, n_negative_events = 0L, n_mixed_events = 0L, n_indeterminate_events = 0L, n_interpretable_events = 0L,
       n_hospitalizations = 0L,
       n_patients = 0L
     )
   ) %>%
   mutate(
-    positive_event_rate = if_else(n_events > 0, n_positive_events / n_events, NA_real_),
+    positive_event_rate = if_else(n_interpretable_events > 0, n_positive_events / n_interpretable_events, NA_real_),
     culture_type = fct_relevel(factor(culture_type), "Other", after = Inf)
   )
 
@@ -170,7 +172,11 @@ monthly_positivity_by_fluid_category <- events %>%
   summarise(
     n_events = n(),
     n_positive_events = sum(any_positive_culture, na.rm = TRUE),
-    positive_event_rate = n_positive_events / n_events,
+    n_negative_events = sum(result_status == "Negative/no growth"),
+    n_mixed_events = sum(result_status == "Mixed/contaminated"),
+    n_indeterminate_events = sum(result_status == "Indeterminate"),
+    n_interpretable_events = sum(result_status %in% c("Positive", "Negative/no growth")),
+    positive_event_rate = if_else(n_interpretable_events > 0, n_positive_events / n_interpretable_events, NA_real_),
     n_hospitalizations = n_distinct(hospitalization_id),
     n_patients = n_distinct(patient_id),
     .groups = "drop"
@@ -180,7 +186,7 @@ monthly_positivity_by_fluid_category <- events %>%
     nesting(fluid_category, fluid_category_label),
     fill = list(
       n_events = 0L,
-      n_positive_events = 0L,
+      n_positive_events = 0L, n_negative_events = 0L, n_mixed_events = 0L, n_indeterminate_events = 0L, n_interpretable_events = 0L,
       n_hospitalizations = 0L,
       n_patients = 0L
     )
@@ -188,7 +194,7 @@ monthly_positivity_by_fluid_category <- events %>%
   mutate(
     site_name = site_name,
     care_setting = "ICU",
-    positive_event_rate = if_else(n_events > 0, n_positive_events / n_events, NA_real_),
+    positive_event_rate = if_else(n_interpretable_events > 0, n_positive_events / n_interpretable_events, NA_real_),
     fluid_category_label = fct_reorder(fluid_category_label, n_events, .fun = sum, .desc = TRUE)
   )
 
@@ -201,7 +207,11 @@ monthly_positivity_five_panel <- bind_rows(
   summarise(
     n_events = n(),
     n_positive_events = sum(any_positive_culture, na.rm = TRUE),
-    positive_event_rate = n_positive_events / n_events,
+    n_negative_events = sum(result_status == "Negative/no growth"),
+    n_mixed_events = sum(result_status == "Mixed/contaminated"),
+    n_indeterminate_events = sum(result_status == "Indeterminate"),
+    n_interpretable_events = sum(result_status %in% c("Positive", "Negative/no growth")),
+    positive_event_rate = if_else(n_interpretable_events > 0, n_positive_events / n_interpretable_events, NA_real_),
     n_hospitalizations = n_distinct(hospitalization_id),
     n_patients = n_distinct(patient_id),
     .groups = "drop"
@@ -211,7 +221,7 @@ monthly_positivity_five_panel <- bind_rows(
     culture_panel = factor(five_panel_levels, levels = five_panel_levels),
     fill = list(
       n_events = 0L,
-      n_positive_events = 0L,
+      n_positive_events = 0L, n_negative_events = 0L, n_mixed_events = 0L, n_indeterminate_events = 0L, n_interpretable_events = 0L,
       n_hospitalizations = 0L,
       n_patients = 0L
     )
@@ -219,7 +229,7 @@ monthly_positivity_five_panel <- bind_rows(
   mutate(
     site_name = site_name,
     care_setting = "ICU",
-    positive_event_rate = if_else(n_events > 0, n_positive_events / n_events, NA_real_)
+    positive_event_rate = if_else(n_interpretable_events > 0, n_positive_events / n_interpretable_events, NA_real_)
   )
 
 five_panel_total_event_density <- monthly_event_density(monthly_positivity_five_panel, "culture_panel")
@@ -266,18 +276,11 @@ five_panel_palette <- c(
 )
 available_palette <- clif_complete_specimen_palette(levels(monthly_by_type$culture_type))
 
-monthly_by_type_stacked <- monthly_by_type %>%
-  mutate(culture_type = fct_collapse(culture_type, Other = c("Other", "Other unspecified"))) %>%
+monthly_by_type_stacked <- events_plot %>%
+  mutate(culture_type = if_else(as.character(culture_type_plot) %in% c("Other", "Other unspecified"), "Other", as.character(culture_type_plot))) %>%
   group_by(culture_month, culture_type) %>%
-  summarise(
-    n_events = sum(n_events),
-    n_positive_events = sum(n_positive_events),
-    positive_event_rate = if_else(n_events > 0, n_positive_events / n_events, NA_real_),
-    n_hospitalizations = sum(n_hospitalizations),
-    n_patients = sum(n_patients),
-    .groups = "drop"
-  ) %>%
-  mutate(culture_type = fct_relevel(factor(culture_type), "Other", after = Inf))
+  summarise(n_events = n(), n_positive_events = sum(any_positive_culture), n_interpretable_events = sum(result_status %in% c("Positive", "Negative/no growth")), n_hospitalizations = n_distinct(hospitalization_id), n_patients = n_distinct(patient_id), .groups = "drop") %>%
+  mutate(positive_event_rate = if_else(n_interpretable_events > 0, n_positive_events / n_interpretable_events, NA_real_), culture_type = factor(culture_type))
 
 stacked_palette <- clif_complete_specimen_palette(levels(monthly_by_type_stacked$culture_type))
 

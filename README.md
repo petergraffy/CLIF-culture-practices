@@ -8,7 +8,7 @@ Describe variation in microbiology culture acquisition across CLIF sites and cha
 
 ## Cohort
 
-Include all patients in CLIF with at least one microbiology culture collected during the study window. All culture specimen types should be retained initially, with specimen-type-specific summaries used to describe practice variation and interpret organism yield.
+Use all ICU stays as the acquisition denominator, including stays without cultures. Describe results among cultures collected during those stays. Retain all specimen types and summarize yield by specimen, site, and time. See [analysis definitions](docs/analysis_definitions.md).
 
 ## Core Questions
 
@@ -50,7 +50,7 @@ Configure local CLIF table paths with `config/config.json`, then run:
 Rscript code/01_identify_icu_culture_cohort.R
 ```
 
-This writes timestamped ICU culture cohort exports under `output/cohort/`.
+This writes aggregate cohort summaries under `output/cohort/` and private intermediates under `data/intermediate/cohort/`. For an isolated, fully documented run, use the recommended pipeline command below.
 
 By default, this also writes private row-level intermediates under `data/intermediate/cohort/` for scripts that still use a local cohort extract. Disable those private intermediates with:
 
@@ -102,24 +102,28 @@ After cohort identification, run:
 Rscript code/08_organism_trends.R
 ```
 
-This screens top organisms and targeted resistance phenotypes for monthly detection-rate trends per 100 ICU admissions and per 100 ICU days. It writes fastest-increasing and fastest-decreasing organism plots, with plotted-organism summary CSVs for each direction. Trend plots are color-coded by organism taxonomy. When `microbiology_susceptibility` is available, MRSA, VRE, and CRE are derived from resistant antimicrobial susceptibility results; otherwise, the script falls back to explicit resistance terms in organism text and writes an aggregate source summary.
+This screens organism detection with negative-binomial GAMs, smooth calendar time, annual seasonality, offsets, endpoint contrasts, FDR correction, and residual diagnostics. Rank plots describe net fitted change, not a constant annual slope. Text-reported resistance labels remain explicitly separate from susceptibility-derived analyses.
+
+## Optional Susceptibility Analysis
+
+`code/09_susceptibility_trends.R` runs at sites with both microbiology tables. It uses the CLIF mCIDE `organism_id`, `antimicrobial_category`, and `susceptibility_category` fields. For each organism–antimicrobial pair it reports susceptible/non-susceptible detections per ICU day, the non-susceptible fraction among interpretable tests, testing coverage, and flexible temporal models. Missing tables produce a clean skip; missing tests never become susceptible. See [definitions and limitations](docs/analysis_definitions.md).
 
 ## Recommended Multi-Site Run
 
-For each site, create `config/config.json` with `site_name`, `repo`, `tables_path`, `file_type`, and the study window. Then run the aggregate-producing scripts from the repository root:
+For each site, create `config/config.json` with `site_name`, `repo`, `tables_path`, `file_type`, and the study window. Install pinned dependencies with `renv::restore()`, then run from the repository root:
 
 ```sh
-Rscript code/01_identify_icu_culture_cohort.R
-Rscript code/02_plot_culture_time_series.R
-Rscript code/04_plot_positive_organisms.R
-Rscript code/05_culture_rates_per_icu_admission.R
-Rscript code/06_icu_day_denominators_and_timing.R
-Rscript code/08_organism_trends.R
-Rscript code/07_prepare_site_exports.R
+Rscript code/00_run_pipeline.R
 ```
 
-Before pooling, confirm that `code/07_prepare_site_exports.R` completes without finding disallowed identifier or exact timestamp columns in `output/`.
+The runner executes cohort construction, continuity QC, descriptive plots, rates, ICU-day/timing analyses, organism trends, optional susceptibility trends, and the export audit. It writes aggregate outputs to `output/runs/<run_id>/` and private intermediates to `data/intermediate/runs/<run_id>/`. Config/code/mapping hashes and package versions are recorded in run manifests. Share a single completed run after reviewing continuity flags and site release rules.
+
+For manual run order and overrides, see [code/README.md](code/README.md). Run synthetic unit checks with `Rscript tests/test_core.R`.
 
 ## Data Governance
 
 Do not commit PHI, row-level CLIF extracts, credentials, or institution-specific restricted files. Use local paths, environment variables, or ignored private directories for sensitive inputs. Share only aggregate files from `output/` after the site export privacy audit passes.
+
+## Cross-site pooling
+
+After sites generate completed aggregate runs, use `Rscript code/11_pool_site_trends.R config/pooling_sites.csv`. This refits site models over common validated months, pools endpoint changes with random-effects meta-analysis, and fits secondary joint season-adjusted curves. See [pooling definitions and registry setup](docs/pooling.md). No cross-site estimates are produced by the single-site runner.

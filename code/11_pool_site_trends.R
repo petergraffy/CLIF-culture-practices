@@ -1,0 +1,35 @@
+# Central analysis: aggregate site exports only. Run independently of the site pipeline.
+suppressPackageStartupMessages({library(dplyr);library(tidyr);library(readr);library(lubridate);library(ggplot2)})
+if (!requireNamespace("metafor",quietly=TRUE)) stop("Restore dependencies with renv::restore(); metafor is required.")
+source("utils/trends.R");source("utils/pooling.R")
+args <- commandArgs(trailingOnly=TRUE)
+registry_path <- if(length(args)>=1)args[1] else "config/pooling_sites.csv"
+out_dir <- if(length(args)>=2)args[2] else file.path("output","pooling",paste0(format(Sys.time(),"%Y%m%d_%H%M%S"),"_",Sys.getpid()))
+coverage_min <- as.numeric(Sys.getenv("AST_MIN_TESTING_FRACTION","0.5"))
+if(!is.finite(coverage_min)||coverage_min<0||coverage_min>1)stop("AST_MIN_TESTING_FRACTION must be between 0 and 1.")
+if(dir.exists(out_dir) && length(list.files(out_dir,all.files=TRUE,no..=TRUE)))stop("Pooling output directory must be new or empty.")
+registry <- read_csv(registry_path,show_col_types=FALSE,col_types=cols(site_name=col_character(),run_dir=col_character(),validated_start_date=col_date(),validated_end_date=col_date(),culture_qc_pass=col_logical(),ast_qc_pass=col_logical()))
+inputs <- read_pooling_sites(registry)
+dir.create(out_dir,recursive=TRUE,showWarnings=FALSE)
+files <- c("code/11_pool_site_trends.R","utils/pooling.R","utils/trends.R","renv.lock")
+manifest <- list(analysis_status="running",started_utc=format(Sys.time(),tz="UTC",usetz=TRUE),registry_md5=unname(tools::md5sum(registry_path)),code_md5=as.list(tools::md5sum(files)),R_version=R.version.string,packages=as.list(setNames(vapply(c("mgcv","metafor","dplyr","ggplot2"),function(p)as.character(packageVersion(p)),character(1)),c("mgcv","metafor","dplyr","ggplot2"))),AST_MIN_TESTING_FRACTION=coverage_min,site_weighting="equal-site response-scale mean",meta_method="REML with modified Knapp-Hartung (SE floor)",joint_minimum_sites=3L)
+jsonlite::write_json(manifest,file.path(out_dir,"pooling_manifest.json"),pretty=TRUE,auto_unbox=TRUE)
+dir.create(file.path(out_dir,"source_snapshot"))
+for(f in files)file.copy(f,file.path(out_dir,"source_snapshot",basename(f)))
+readr::write_csv(inputs$audit,file.path(out_dir,"site_registry_audit.csv"))
+readr::write_csv(inputs$hashes,file.path(out_dir,"input_file_hashes.csv"))
+status <- tryCatch({
+  result <- run_pooling(inputs,coverage_min)
+  for(name in names(result)) {
+    pooling_forbidden(result[[name]])
+    if(ncol(result[[name]]))write_csv(result[[name]],file.path(out_dir,paste0("pooled_",name,".csv")))
+  }
+  plot_pooling(result,out_dir)
+  if(!identical(as.list(tools::md5sum(files)),manifest$code_md5) || !identical(unname(tools::md5sum(registry_path)),manifest$registry_md5))stop("Pooling inputs or code changed during run.")
+  if(!identical(unname(tools::md5sum(inputs$source_paths)),inputs$hashes$md5))stop("Aggregate source exports changed during pooling run.")
+  "completed"
+},error=function(e){manifest$error<<-conditionMessage(e);"failed"})
+manifest$analysis_status<-status;manifest$finished_utc<-format(Sys.time(),tz="UTC",usetz=TRUE)
+jsonlite::write_json(manifest,file.path(out_dir,"pooling_manifest.json"),pretty=TRUE,auto_unbox=TRUE)
+if(status!="completed")stop(manifest$error)
+message("Completed aggregate cross-site analysis: ",normalizePath(out_dir))

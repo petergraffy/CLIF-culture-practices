@@ -1,6 +1,7 @@
 # Shared site configuration and table readers for CLIF project scripts.
 
 source("utils/config.R")
+source("utils/culture_core.R")
 
 clif_site_name <- config_value(config, "site_name", env = "CLIF_SITE_NAME", default = "SITE")
 clif_repo_path <- normalizePath(
@@ -16,7 +17,8 @@ project_path <- function(...) {
 }
 
 project_output_path <- function(...) {
-  project_path("output", ...)
+  id <- Sys.getenv("CLIF_RUN_ID", "")
+  if (nzchar(id)) project_path("output", "runs", id, ...) else project_path("output", ...)
 }
 
 project_output_dir <- function(...) {
@@ -26,7 +28,8 @@ project_output_dir <- function(...) {
 }
 
 project_intermediate_path <- function(...) {
-  project_path("data", "intermediate", ...)
+  id <- Sys.getenv("CLIF_RUN_ID", "")
+  if (nzchar(id)) project_path("data", "intermediate", "runs", id, ...) else project_path("data", "intermediate", ...)
 }
 
 project_intermediate_dir <- function(...) {
@@ -41,7 +44,12 @@ latest_project_intermediate_file <- function(pattern, ...) {
   if (length(files) == 0) {
     stop("No files found in ", path, " matching pattern: ", pattern)
   }
-  files[which.max(file.info(files)$mtime)]
+  file <- files[which.max(file.info(files)$mtime)]
+  header <- names(readr::read_csv(file, n_max = 0, show_col_types = FALSE))
+  if (!"culture_event_id" %in% header && grepl("icu_culture_(rows|events)_", basename(file))) {
+    stop("Legacy intermediate lacks the shared culture_event_id. Rerun 01 or 00_run_pipeline.R.")
+  }
+  file
 }
 
 clif_specimen_type_palette <- c(
@@ -102,7 +110,7 @@ read_any <- function(path) {
   ext <- tolower(tools::file_ext(path))
   out <- switch(
     ext,
-    "csv" = readr::read_csv(path, show_col_types = FALSE),
+    "csv" = read_clif_csv(path, show_col_types = FALSE),
     "parquet" = arrow::read_parquet(path),
     "fst" = {
       if (!requireNamespace("fst", quietly = TRUE)) stop("Package 'fst' is required to read fst files.")
@@ -131,6 +139,7 @@ find_table_path <- function(tbl_base, tables_path = clif_tables_path, file_type 
   hit <- files[base_norm == wanted]
 
   if (length(hit) == 1) return(hit)
+  if (length(hit) > 1) stop("Ambiguous CLIF table ", wanted, ": ", length(hit), " matching files.")
   if (required) {
     stop("Could not uniquely locate ", wanted, " in ", tables_path, ". Matches: ", length(hit))
   }

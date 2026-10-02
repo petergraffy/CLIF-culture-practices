@@ -28,6 +28,9 @@ dir.create(manifest_dir, recursive = TRUE, showWarnings = FALSE)
 
 disallowed_columns <- c(
   "patient_id",
+  "culture_event_id",
+  "detection_event_id",
+  "culture_row_id",
   "hospitalization_id",
   "icu_admission_id",
   "icu_interval_id",
