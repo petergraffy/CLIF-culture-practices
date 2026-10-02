@@ -2,7 +2,17 @@
 
 ## Run and execution checks
 
-Use a site with both `microbiology_culture` and `microbiology_susceptibility`. Restore pinned packages with `renv::restore()`, copy `config/config_template.json` to the ignored `config/config.json`, and set the site label, local repository/table paths, and file type. The study team maintains the shared dates in `utils/study_settings.R` (currently January 1, 2018–December 31, 2024); culture coverage is assumed complete within that window.
+Use a site with both `microbiology_culture` and `microbiology_susceptibility`. Copy `config/config_template.json` to the ignored `config/config.json`, and set the site label, local repository/table paths, and file type. The study team maintains the shared dates in `utils/study_settings.R` (currently January 1, 2018–December 31, 2024); culture coverage is assumed complete within that window.
+
+Before the first test or pipeline run, install the pinned packages from the repository root:
+
+```sh
+Rscript -e 'renv::restore(prompt = FALSE)'
+```
+
+This is a separate setup step. The pipeline does not install missing packages. The project environment activates automatically thereafter; restore again when `renv.lock` changes or preflight reports a dependency mismatch.
+
+Then run the checks and pipeline:
 
 ```sh
 Rscript tests/test_preflight.R

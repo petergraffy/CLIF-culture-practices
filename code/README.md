@@ -1,10 +1,13 @@
 # Running the culture-practices pipeline
 
-Copy `config/config_template.json` to ignored `config/config.json` and set site, repository/table paths, and file type. The study team maintains the shared inclusive dates in `utils/study_settings.R`, currently January 1, 2018–December 31, 2024. Culture coverage is assumed complete within that window. Install dependencies with `renv::restore()`.
+Copy `config/config_template.json` to ignored `config/config.json` and set site, repository/table paths, and file type. The study team maintains the shared inclusive dates in `utils/study_settings.R`, currently January 1, 2018–December 31, 2024. Culture coverage is assumed complete within that window. From the repository root, install the pinned packages before the first pipeline run, then run the pipeline:
 
 ```sh
+Rscript -e 'renv::restore(prompt = FALSE)'
 Rscript code/00_run_pipeline.R
 ```
+
+The restore command is a separate first-time setup step. The pipeline does not install missing packages; `.Rprofile` activates the project environment automatically on subsequent runs. Restore again when `renv.lock` changes or preflight reports a dependency mismatch.
 
 This is the recommended site workflow. Every run has an isolated `output/runs/<run_id>/` aggregate tree and `data/intermediate/runs/<run_id>/` private tree. Source rows and exact identifiers/timestamps remain private. The manifest records code/config/mapping hashes, input metadata, packages, and completion status. Review QC and the export audit before sharing.
 

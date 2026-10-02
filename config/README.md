@@ -1,6 +1,13 @@
 # Configuration
 
-Copy `config_template.json` to `config.json` and update it for the local environment.
+From the repository root, copy `config/config_template.json` to `config/config.json` and edit the four local fields below. Then install the pinned packages before the first pipeline run:
+
+```sh
+Rscript -e 'renv::restore(prompt = FALSE)'
+Rscript code/00_run_pipeline.R
+```
+
+Package installation is a separate first-time step; the pipeline only checks dependencies. The project environment activates automatically for subsequent runs from the repository root. Restore again after `renv.lock` changes or if preflight reports missing packages/version mismatches.
 
 Required fields:
 

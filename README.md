@@ -4,18 +4,28 @@ This repository supports a CLIF-wide study of microbiology culture practices and
 
 ## Quick start for sites
 
-Use R 4.4.2, the version recorded in `renv.lock`. From the repository root, restore dependencies, copy the config template, and edit its four local fields: `site_name`, `repo`, `tables_path`, and `file_type`.
+Use R 4.4.2, the version recorded in `renv.lock`. First-time setup:
 
-```sh
-Rscript -e 'renv::restore(prompt = FALSE)'
-cp config/config_template.json config/config.json
-```
+1. Clone this repository and open a terminal in the repository root.
+2. Copy the config template, then edit `config/config.json` to set `site_name`, `repo`, `tables_path`, and `file_type`:
 
-After editing `config/config.json`, run:
+   ```sh
+   cp config/config_template.json config/config.json
+   ```
 
-```sh
-Rscript code/00_run_pipeline.R
-```
+3. **Install the pinned packages before the first pipeline run:**
+
+   ```sh
+   Rscript -e 'renv::restore(prompt = FALSE)'
+   ```
+
+4. Run the pipeline:
+
+   ```sh
+   Rscript code/00_run_pipeline.R
+   ```
+
+Package restoration is a separate setup step; the pipeline does not install missing packages. The project environment activates automatically through `.Rprofile` for subsequent runs from the repository root. Run the restore command again after an update changes `renv.lock`, or if preflight reports missing packages or version mismatches.
 
 Required tables are `hospitalization`, `adt`, and `microbiology_culture`. The pipeline first checks packages, table paths, required columns, and source dates. The study team maintains the shared 2018–2024 window. AST is optional and skips cleanly when absent. Parquet, CSV, and FST readers are included in the pinned dependencies.
 
