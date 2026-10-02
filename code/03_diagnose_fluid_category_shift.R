@@ -21,7 +21,7 @@ source("utils/clif_io.R")
 
 site_name <- clif_site_name
 diagnosis_start <- safe_ts(Sys.getenv("DIAGNOSIS_START_DATE", unset = "2022-01-01"))
-diagnosis_end <- safe_ts(Sys.getenv("DIAGNOSIS_END_DATE", unset = config_value(config, "study_end_date", default = "2024-12-31"))) + days(1)
+diagnosis_end <- safe_ts(Sys.getenv("DIAGNOSIS_END_DATE", unset = study_settings$study_end_date)) + days(1)
 shift_date <- safe_ts(Sys.getenv("CATEGORY_SHIFT_DATE", unset = "2023-05-01"))
 event_path <- Sys.getenv("ICU_CULTURE_EVENTS_PATH", unset = NA_character_)
 if (is.na(event_path) || !nzchar(event_path)) {

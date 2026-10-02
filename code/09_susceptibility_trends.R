@@ -10,15 +10,12 @@ run_susceptibility <- function() {
   if(is.na(path)){write_availability("skipped_table_unavailable");message("Susceptibility table unavailable; analysis skipped.");return(invisible(NULL))}
   write_availability("analysis_started")
   coverage_min <- as.numeric(Sys.getenv("AST_MIN_TESTING_FRACTION","0.5"));linkage_min <- as.numeric(Sys.getenv("AST_MIN_LINKAGE_FRACTION","0.9"))
-  validated <- tolower(as.character(config_value(config,"culture_coverage_validated",env="AST_CULTURE_COVERAGE_VALIDATED",default=FALSE)))
-  if(length(validated)!=1 || !validated %in% c("true","false","1","0"))stop("culture_coverage_validated must be TRUE/FALSE.")
-  validated <- validated %in% c("true","1")
   if(any(!is.finite(c(coverage_min,linkage_min))) || any(c(coverage_min,linkage_min)<0 | c(coverage_min,linkage_min)>1))stop("AST coverage/linkage thresholds must be between 0 and 1.")
-  start <- safe_ts(config_value(config,"study_start_date",env="STUDY_START_DATE",default=NA_character_));end <- safe_ts(config_value(config,"study_end_date",env="STUDY_END_DATE",default=NA_character_))+days(1)
+  start <- safe_ts(study_settings$study_start_date);end <- safe_ts(study_settings$study_end_date)+days(1)
   rows <- read_clif_csv(latest_project_intermediate_file("^icu_culture_rows_.*\\.csv$","cohort"),show_col_types=FALSE) %>% mutate(collect_dttm=safe_ts(collect_dttm),organism_id=as.character(organism_id))
   stays <- read_culture_data(start,end)$icu_admissions
   month_seq <- seq(floor_date(min(stays$icu_in_dttm_clipped),"month"),floor_date(max(stays$icu_out_dttm_clipped-seconds(1)),"month"),by="month")
-  result <- build_susceptibility_analysis(rows,read_tbl("microbiology_susceptibility"),monthly_icu_denominators(stays,month_seq),project_path("config","mcide"),validated,coverage_min,linkage_min)
+  result <- build_susceptibility_analysis(rows,read_tbl("microbiology_susceptibility"),monthly_icu_denominators(stays,month_seq),project_path("config","mcide"),coverage_min,linkage_min)
   write_csv(mutate(result$qc,site_name=clif_site_name),file.path(out_dir,glue("susceptibility_qc_{clif_site_name}_{stamp}.csv")))
   write_csv(mutate(result$linkage_qc,site_name=clif_site_name),file.path(out_dir,glue("monthly_susceptibility_linkage_qc_{clif_site_name}_{stamp}.csv")))
   if(!nrow(result$monthly)){write_availability(result$analysis_status);message("Susceptibility: ",result$analysis_status);return(invisible(NULL))}

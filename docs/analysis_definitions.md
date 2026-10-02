@@ -4,7 +4,7 @@
 
 The practices denominator is every valid ICU stay represented in ADT, including stays without culture. Culture results and organism distributions are summarized among observed ICU cultures. No adult-only restriction is imposed by the current project.
 
-ICU stays merge overlapping and contiguous ICU ADT rows within patient/hospitalization. Missing ICU exit time is replaced by hospital discharge; the frequency of this imputation is exported by QC. ICU intervals are half-open `[entry, exit)`: a specimen at exit does not belong to the departing stay. Study dates are inclusive calendar dates, implemented using an exclusive midnight after the end date.
+ICU stays merge overlapping and contiguous ICU ADT rows within patient/hospitalization. Missing ICU exit time is replaced by hospital discharge; the frequency of this imputation is exported by QC. ICU intervals are half-open `[entry, exit)`: a specimen at exit does not belong to the departing stay. Study dates are inclusive calendar dates, implemented using an exclusive midnight after the end date. The study team maintains them centrally in `utils/study_settings.R` (currently 2018-01-01 through 2024-12-31); site config and date environment variables do not change the shared window.
 
 One culture event is patient/hospitalization/merged ICU stay/order time/collection time/source fluid name/source method name. Standardized categories are descriptive attributes, not event identifiers. Latest available `result_dttm` is retained within event/isolate; when `organism_id` is absent, organism labels provide the fallback isolate key. Named organisms remain separate within polymicrobial events. Conflicting AST results cannot be resolved by chronology because the CLIF susceptibility schema has no result timestamp.
 
@@ -28,7 +28,7 @@ Calendar-month ICU days are exact duration overlaps with that month, including s
 
 At UCMC, the existing exploratory outputs show lower respiratory and pleural categories disappearing after April 2023. No replacement mapping has been inferred: source fluid names can be test order names and need not identify the actual specimen. Confirm source ETL before interpreting that period.
 
-Verified corrections can be entered in `config/specimen_category_overrides.csv`: exact fluid name, original category, inclusive dates, replacement category, documented reason. Original categories are preserved privately; overlapping rules fail. If the mapping cannot be established, restrict `study_start_date`/`study_end_date` to a validated period and rerun. Do not treat a missing category as evidence of zero clinical sampling.
+Verified corrections can be entered in `config/specimen_category_overrides.csv`: exact fluid name, original category, inclusive dates, replacement category, documented reason. Original categories are preserved privately; overlapping rules fail. If the mapping cannot be established, the study team should determine an appropriate analysis restriction and rerun. Do not treat a missing category as evidence of zero clinical sampling.
 
 ## Temporal analysis
 
@@ -60,7 +60,7 @@ Analyses are organism–antimicrobial specific, overall and stratified by specim
 
 Positive-organism months require at least `AST_MIN_LINKAGE_FRACTION` linkage completeness (default 0.9). Rate models additionally require `AST_MIN_TESTING_FRACTION` interpretable testing / all observed positive isolates (default 0.5). These are QC screening defaults, not validated statistical cutoffs. Fraction models require adequate linkage and at least one interpretable test, without the rate-model testing threshold.
 
-A month with zero observed isolates for an already-observed organism–drug–specimen pair contributes zero S and NS detections only when `culture_coverage_validated` is TRUE, the specimen stratum has culture-source activity, there are no positive rows with missing organism categories in that stratum, and ICU exposure is positive. The flag defaults to FALSE and must be declared only after local reconciliation of source coverage and mappings over the configured window. Restrict the window if only part is validated. `AST_CULTURE_COVERAGE_VALIDATED` overrides the config flag. No tests or tested fraction are invented for these zero-organism months. A drug pair never observed at a site remains absent.
+Culture coverage is assumed complete within the project-wide study window. Sites do not set a coverage declaration. A month with zero observed isolates for an already-observed organism–drug–specimen pair contributes zero S and NS detections when the specimen stratum has culture-source activity, there are no positive rows with missing organism categories in that stratum, and ICU exposure is positive. No tests or tested fraction are invented for these zero-organism months. A drug pair never observed at a site remains absent.
 
 Months containing organisms but no interpretable tests have unknown displayed S/NS rates and tested fractions. Each aggregate row records `observation_status`, `rate_model_eligible`, `fraction_model_eligible`, and the thresholds used. Missing source activity, incomplete organism identification, unvalidated zeros, poor linkage and inadequate testing are explicit exclusions. Linkage QC is exported by month × organism × specimen, independently of whether a drug links successfully.
 

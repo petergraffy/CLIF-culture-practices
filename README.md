@@ -58,9 +58,7 @@ By default, this also writes private row-level intermediates under `data/interme
 WRITE_ROW_LEVEL_INTERMEDIATES=false Rscript code/01_identify_icu_culture_cohort.R
 ```
 
-Optional date-window environment variables restrict by culture collection time:
-
-Prefer setting `study_start_date` and `study_end_date` in `config/config.json` for site runs. Environment variables remain available for one-off reruns.
+The study team maintains the shared inclusive study window in `utils/study_settings.R`, currently January 1, 2018–December 31, 2024. All site analyses and plots use that window. Sites configure only their label, repository/table paths, and file type.
 
 ## Time-Series Plots
 
@@ -73,7 +71,7 @@ Rscript code/02_plot_culture_time_series.R
 Optional plot controls:
 
 ```sh
-TOP_N_CULTURE_TYPES=8 PLOT_END_DATE=2024-12-31 Rscript code/02_plot_culture_time_series.R
+TOP_N_CULTURE_TYPES=8 Rscript code/02_plot_culture_time_series.R
 ```
 
 The script reads the latest private event file from `<repo>/data/intermediate/cohort/`. It writes monthly aggregate summaries and PNG figures under `<repo>/output/time_series/`.
@@ -89,7 +87,7 @@ Rscript code/04_plot_positive_organisms.R
 Optional controls:
 
 ```sh
-TOP_N_CULTURE_TYPES=8 TOP_N_ORGANISMS_PER_TYPE=10 PLOT_END_DATE=2024-12-31 Rscript code/04_plot_positive_organisms.R
+TOP_N_CULTURE_TYPES=8 TOP_N_ORGANISMS_PER_TYPE=10 Rscript code/04_plot_positive_organisms.R
 ```
 
 The script reads the latest private culture row file from `<repo>/data/intermediate/cohort/`. It writes aggregate positive organism summaries and PNG figures under `<repo>/output/organisms/`.

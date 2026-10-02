@@ -80,19 +80,16 @@ buddy_rows<-tibble(organism_id=paste0("o",seq_len(48)),culture_event_id=seq_len(
 buddy_ast<-tibble(organism_id=paste0("o",seq_len(24)),antimicrobial_category="ceftriaxone",susceptibility_category="non_susceptible")
 buddy_den<-tibble(calendar_month=buddy_months,n_icu_days=1000,n_icu_admissions=100L)
 test_that("disappearance retains validated zero months but never invents tested fractions", {
- result<-build_susceptibility_analysis(buddy_rows,buddy_ast,buddy_den,culture_coverage_validated=TRUE)
+ result<-build_susceptibility_analysis(buddy_rows,buddy_ast,buddy_den)
  x<-filter(result$monthly,specimen_stratum=="Overall")
  expect_equal(nrow(x),48L);expect_true(all(x$rate_model_eligible))
  expect_true(all(x$observation_status[25:48]=="organism_not_detected"))
  expect_true(all(x$non_susceptible_per_100_icu_days[25:48]==0))
  expect_true(all(is.na(x$non_susceptible_fraction[25:48])))
- # No positive evidence of complete source coverage means zero months stay unavailable.
- unvalidated<-build_susceptibility_analysis(buddy_rows,buddy_ast,buddy_den)$monthly
- expect_true(all(filter(unvalidated,n_culture_isolates==0)$observation_status=="zero_unvalidated_source"))
- gap<-build_susceptibility_analysis(buddy_rows[-48,],buddy_ast,buddy_den,culture_coverage_validated=TRUE)$monthly
+ gap<-build_susceptibility_analysis(buddy_rows[-48,],buddy_ast,buddy_den)$monthly
  expect_true(all(filter(gap,calendar_month==buddy_months[48])$observation_status=="source_unavailable"))
  incomplete<-buddy_rows;incomplete$organism_category[48]<-NA_character_
- unknown<-build_susceptibility_analysis(incomplete,buddy_ast,buddy_den,culture_coverage_validated=TRUE)$monthly
+ unknown<-build_susceptibility_analysis(incomplete,buddy_ast,buddy_den)$monthly
  expect_true(all(filter(unknown,calendar_month==buddy_months[48])$observation_status=="organism_identification_incomplete"))
 })
 test_that("testing coverage includes isolates missing linkage IDs", {

@@ -14,10 +14,11 @@ normalize_susceptibility <- function(ast, mcide_dir = "config/mcide") {
     susceptibility_category = dplyr::case_when(susceptibility_category %in% c("susceptible", "non_susceptible", "indeterminate") ~ susceptibility_category, TRUE ~ "unavailable"))
 }
 
-# Shared by local and pooled models. Zero organisms is distinct from untested organisms.
+# Shared by local and pooled models. Culture capture is assumed complete.
+# Zero organisms is distinct from untested organisms; source activity is still required.
 screen_susceptibility_months <- function(x, coverage_min = 0.5, linkage_min = 0.9) {
   if (any(!is.finite(c(coverage_min,linkage_min))) || any(c(coverage_min,linkage_min)<0 | c(coverage_min,linkage_min)>1)) stop("AST coverage/linkage thresholds must be between 0 and 1.")
-  required <- c("n_culture_isolates","n_linkable_culture_isolates","n_interpretable","n_observed_culture_events","n_positive_rows_missing_organism_category","culture_coverage_validated","n_icu_days")
+  required <- c("n_culture_isolates","n_linkable_culture_isolates","n_interpretable","n_observed_culture_events","n_positive_rows_missing_organism_category","n_icu_days")
   if (!all(required %in% names(x))) stop("Susceptibility export lacks observation/linkage fields; rerun the site pipeline.")
   if (any(!is.finite(x$n_culture_isolates) | !is.finite(x$n_linkable_culture_isolates) | !is.finite(x$n_interpretable) | x$n_culture_isolates<0 | x$n_linkable_culture_isolates<0 | x$n_interpretable<0 | x$n_linkable_culture_isolates>x$n_culture_isolates | x$n_interpretable>x$n_linkable_culture_isolates)) stop("Invalid AST isolate/test counts.")
   x %>% dplyr::mutate(
@@ -25,18 +26,18 @@ screen_susceptibility_months <- function(x, coverage_min = 0.5, linkage_min = 0.
     testing_fraction = dplyr::if_else(n_culture_isolates>0,n_interpretable/n_culture_isolates,NA_real_),
     testing_fraction_linkable = dplyr::if_else(n_linkable_culture_isolates>0,n_interpretable/n_linkable_culture_isolates,NA_real_),
     source_observed = is.finite(n_observed_culture_events) & n_observed_culture_events>0,
-    zero_detection_validated = n_culture_isolates==0 & source_observed & dplyr::coalesce(culture_coverage_validated,FALSE) & n_positive_rows_missing_organism_category==0,
+    zero_detection_validated = n_culture_isolates==0 & source_observed & n_positive_rows_missing_organism_category==0,
     linkage_eligible = n_culture_isolates>0 & dplyr::coalesce(linkage_fraction>=linkage_min,FALSE),
     observation_status = dplyr::case_when(!is.finite(n_icu_days) | n_icu_days<=0 ~ "no_icu_exposure", !source_observed ~ "source_unavailable",
       n_culture_isolates==0 & n_positive_rows_missing_organism_category>0 ~ "organism_identification_incomplete",
-      zero_detection_validated ~ "organism_not_detected", n_culture_isolates==0 ~ "zero_unvalidated_source",
+      zero_detection_validated ~ "organism_not_detected",
       !linkage_eligible ~ "insufficient_linkage", n_interpretable==0 ~ "no_interpretable_tests", testing_fraction<coverage_min ~ "insufficient_testing_coverage", TRUE ~ "adequate_testing"),
     rate_model_eligible = observation_status %in% c("organism_not_detected","adequate_testing"),
     fraction_model_eligible = source_observed & linkage_eligible & n_interpretable>0,
     minimum_testing_fraction_for_rate=coverage_min, minimum_linkage_fraction=linkage_min)
 }
 
-build_susceptibility_analysis <- function(rows, ast, denominators, mcide_dir = "config/mcide", culture_coverage_validated = FALSE, coverage_min = 0.5, linkage_min = 0.9) {
+build_susceptibility_analysis <- function(rows, ast, denominators, mcide_dir = "config/mcide", coverage_min = 0.5, linkage_min = 0.9) {
   ast <- normalize_susceptibility(ast, mcide_dir)
   qc <- tibble::tibble(metric=c("ast_rows","missing_organism_id_rows","unmapped_antimicrobial_rows","unmapped_result_rows"),n=c(nrow(ast),sum(is.na(ast$organism_id)),sum(!ast$antimicrobial_mapped),sum(ast$unmapped_result)))
   # Retain every positive isolate in coverage denominators, including missing linkage IDs.
@@ -61,7 +62,7 @@ build_susceptibility_analysis <- function(rows, ast, denominators, mcide_dir = "
     tidyr::complete(calendar_month=denominators$calendar_month,tidyr::nesting(organism_category,antimicrobial_category,specimen_stratum),fill=list(n_susceptible=0L,n_non_susceptible=0L,n_indeterminate=0L,n_unavailable_reported=0L,n_conflicting=0L)) %>%
     dplyr::left_join(totals,by=c("calendar_month","organism_category","specimen_stratum")) %>% dplyr::left_join(source_counts,by=c("calendar_month","specimen_stratum")) %>% dplyr::left_join(dplyr::select(denominators,-dplyr::any_of("n_observed_culture_events")),by="calendar_month") %>%
     dplyr::mutate(dplyr::across(c(n_culture_isolates,n_linkable_culture_isolates,n_missing_organism_id,n_observed_culture_events,n_positive_rows_missing_organism_category),~dplyr::coalesce(.x,0L)),
-      n_interpretable=n_susceptible+n_non_susceptible,n_without_reported_test=n_culture_isolates-n_interpretable-n_indeterminate-n_unavailable_reported,culture_coverage_validated=culture_coverage_validated,
+      n_interpretable=n_susceptible+n_non_susceptible,n_without_reported_test=n_culture_isolates-n_interpretable-n_indeterminate-n_unavailable_reported,
       non_susceptible_fraction=dplyr::if_else(n_interpretable>0,n_non_susceptible/n_interpretable,NA_real_)) %>% screen_susceptibility_months(coverage_min,linkage_min) %>%
     dplyr::mutate(susceptible_per_100_icu_days=dplyr::if_else(n_icu_days>0 & (n_interpretable>0 | zero_detection_validated),100*n_susceptible/n_icu_days,NA_real_),non_susceptible_per_100_icu_days=dplyr::if_else(n_icu_days>0 & (n_interpretable>0 | zero_detection_validated),100*n_non_susceptible/n_icu_days,NA_real_))
   list(monthly=monthly,qc=qc,linkage_qc=linkage_qc,analysis_status=status)

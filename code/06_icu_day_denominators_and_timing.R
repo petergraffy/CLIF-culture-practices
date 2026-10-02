@@ -54,8 +54,8 @@ month_bar_width <- 25 * 24 * 60 * 60
 
 site_name <- clif_site_name
 tables_path <- clif_tables_path
-study_start_date <- config_value(config, c("study_start_date", "plot_start_date"), env = "STUDY_START_DATE", default = Sys.getenv("PLOT_START_DATE", unset = NA_character_))
-study_end_date <- config_value(config, c("study_end_date", "plot_end_date"), env = "STUDY_END_DATE", default = Sys.getenv("PLOT_END_DATE", unset = NA_character_))
+study_start_date <- study_settings$study_start_date
+study_end_date <- study_settings$study_end_date
 top_n_types <- as.integer(Sys.getenv("TOP_N_CULTURE_TYPES", unset = "8"))
 timing_max_day <- as.integer(Sys.getenv("TIMING_MAX_ICU_DAY", unset = "14"))
 timing_max_hour <- as.integer(Sys.getenv("TIMING_MAX_ICU_HOUR", unset = "168"))

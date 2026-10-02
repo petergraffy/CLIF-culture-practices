@@ -36,7 +36,7 @@ test_that("joint curves average sites equally and include uncertainty and diagno
  expect_equal(pool_screen(filter(fixture,site_name %in% c("S1","S2")),"n_icu_days","n_detection_events")$joint$model_status,"insufficient_sites")
 })
 test_that("AST uses shared testing coverage and tested denominators", {
- ast <- fixture %>% mutate(n_interpretable=200L,n_non_susceptible=rbinom(n(),200,plogis(-2+0.2*t)),n_susceptible=n_interpretable-n_non_susceptible,testing_fraction=0.9,n_culture_isolates=222L,n_linkable_culture_isolates=222L,n_positive_rows_missing_organism_category=0L,culture_coverage_validated=TRUE)
+ ast <- fixture %>% mutate(n_interpretable=200L,n_non_susceptible=rbinom(n(),200,plogis(-2+0.2*t)),n_susceptible=n_interpretable-n_non_susceptible,testing_fraction=0.9,n_culture_isolates=222L,n_linkable_culture_isolates=222L,n_positive_rows_missing_organism_category=0L)
  ast$n_culture_isolates[1]<-ast$n_linkable_culture_isolates[1]<-2000L
  rate<-pool_screen(ast,"n_icu_days","n_non_susceptible")
  expect_true(all(rate$effects$n_common_months==59))
@@ -48,12 +48,13 @@ test_that("AST uses shared testing coverage and tested denominators", {
 })
 
 test_that("pooled AST preserves validated zeros and excludes poor linkage", {
- ast <- fixture %>% mutate(n_interpretable=20L,n_non_susceptible=10L,n_culture_isolates=20L,n_linkable_culture_isolates=20L,n_positive_rows_missing_organism_category=0L,culture_coverage_validated=TRUE,testing_fraction=1)
+ ast <- fixture %>% mutate(n_interpretable=20L,n_non_susceptible=10L,n_culture_isolates=20L,n_linkable_culture_isolates=20L,n_positive_rows_missing_organism_category=0L,testing_fraction=1)
  ast[1,c("n_interpretable","n_non_susceptible","n_culture_isolates","n_linkable_culture_isolates")] <- 0L
  expect_equal(n_distinct(common_pooling_months(ast,"n_icu_days","n_non_susceptible")$calendar_month),60L)
  expect_equal(n_distinct(common_pooling_months(ast,"n_interpretable","n_non_susceptible",TRUE)$calendar_month),59L)
- ast$culture_coverage_validated[1]<-FALSE
+ ast$n_observed_culture_events[1]<-0L
  expect_equal(n_distinct(common_pooling_months(ast,"n_icu_days","n_non_susceptible")$calendar_month),59L)
+ ast$n_observed_culture_events[1]<-100L
  ast$n_culture_isolates[1]<-100L;ast$n_linkable_culture_isolates[1]<-20L;ast$n_interpretable[1]<-20L
  expect_equal(n_distinct(common_pooling_months(ast,"n_interpretable","n_non_susceptible",TRUE)$calendar_month),59L)
 })
@@ -63,7 +64,7 @@ scratch <- Sys.getenv("POOLING_TEST_OUTPUT",tempfile("clif_pooling_"));
 if(dir.exists(scratch))stop("Use a fresh POOLING_TEST_OUTPUT directory.")
 dir.create(scratch,recursive=TRUE)
 registry <- tibble(site_name=paste0("S",1:4),run_dir=file.path(scratch,paste0("S",1:4)),validated_start_date=as.Date("2018-01-01"),validated_end_date=as.Date("2022-12-31"),culture_qc_pass=TRUE,ast_qc_pass=c(TRUE,TRUE,TRUE,FALSE))
-source_files<-c("utils/culture_core.R","utils/trends.R","utils/susceptibility.R","code/08_organism_trends.R","code/09_susceptibility_trends.R","config/mcide/clif_microbiology_susceptibility_category.csv","config/mcide/clif_microbiology_susceptibility_antibiotics_category.csv")
+source_files<-c("utils/study_settings.R","utils/culture_core.R","utils/trends.R","utils/susceptibility.R","code/08_organism_trends.R","code/09_susceptibility_trends.R","config/mcide/clif_microbiology_susceptibility_category.csv","config/mcide/clif_microbiology_susceptibility_antibiotics_category.csv")
 for(i in 1:4){
  r<-registry[i,];for(folder in c("provenance","site_exports","organism_trends","susceptibility"))dir.create(file.path(r$run_dir,folder),recursive=TRUE)
  jsonlite::write_json(list(site_name=r$site_name,run_id=paste0("synthetic_",i),analysis_status="completed",study_start_date="2018-01-01",study_end_date="2022-12-31",code_and_mapping_md5=as.list(tools::md5sum(source_files))),file.path(r$run_dir,"provenance","run_manifest.json"),auto_unbox=TRUE)
@@ -72,7 +73,7 @@ for(i in 1:4){
  write_csv(select(dat,calendar_month,organism_category,n_detection_events,site_name),file.path(r$run_dir,"organism_trends","monthly_all_organism_detection_counts_fixture.csv"))
  write_csv(tibble(file=character(),column=character()),file.path(r$run_dir,"site_exports","site_export_privacy_audit_fixture.csv"))
  if(i<4){
-   ast<-dat %>% mutate(antimicrobial_category="ceftriaxone",specimen_stratum="Overall",n_interpretable=200L,n_non_susceptible=rbinom(n(),200,plogis(-2+0.2*t)),n_susceptible=n_interpretable-n_non_susceptible,testing_fraction=0.9,n_culture_isolates=222L,n_linkable_culture_isolates=222L,n_positive_rows_missing_organism_category=0L,culture_coverage_validated=TRUE) %>% select(site_name,calendar_month,organism_category,antimicrobial_category,specimen_stratum,n_interpretable,n_non_susceptible,n_susceptible,testing_fraction,n_icu_days,n_culture_isolates,n_linkable_culture_isolates,n_observed_culture_events,n_positive_rows_missing_organism_category,culture_coverage_validated)
+   ast<-dat %>% mutate(antimicrobial_category="ceftriaxone",specimen_stratum="Overall",n_interpretable=200L,n_non_susceptible=rbinom(n(),200,plogis(-2+0.2*t)),n_susceptible=n_interpretable-n_non_susceptible,testing_fraction=0.9,n_culture_isolates=222L,n_linkable_culture_isolates=222L,n_positive_rows_missing_organism_category=0L) %>% select(site_name,calendar_month,organism_category,antimicrobial_category,specimen_stratum,n_interpretable,n_non_susceptible,n_susceptible,testing_fraction,n_icu_days,n_culture_isolates,n_linkable_culture_isolates,n_observed_culture_events,n_positive_rows_missing_organism_category)
    write_csv(ast,file.path(r$run_dir,"susceptibility","monthly_organism_antimicrobial_susceptibility_fixture.csv"))
  }
 }

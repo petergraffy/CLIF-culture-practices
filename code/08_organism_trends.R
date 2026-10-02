@@ -146,8 +146,8 @@ theme_trends <- theme_classic(base_size = 12) +
 
 site_name <- clif_site_name
 row_path <- Sys.getenv("ICU_CULTURE_ROWS_PATH", unset = NA_character_)
-study_start_date <- config_value(config, c("study_start_date", "plot_start_date"), env = "STUDY_START_DATE", default = Sys.getenv("PLOT_START_DATE", unset = NA_character_))
-study_end_date <- config_value(config, c("study_end_date", "plot_end_date"), env = "STUDY_END_DATE", default = Sys.getenv("PLOT_END_DATE", unset = NA_character_))
+study_start_date <- study_settings$study_start_date
+study_end_date <- study_settings$study_end_date
 top_n_organisms <- as.integer(Sys.getenv("TOP_N_TREND_ORGANISMS", unset = "25"))
 plot_n_increasing <- as.integer(Sys.getenv("PLOT_N_INCREASING_ORGANISMS", unset = "12"))
 plot_n_decreasing <- as.integer(Sys.getenv("PLOT_N_DECREASING_ORGANISMS", unset = as.character(plot_n_increasing)))

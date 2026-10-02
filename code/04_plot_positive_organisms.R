@@ -291,8 +291,8 @@ top_n_culture_types <- as.integer(Sys.getenv("TOP_N_CULTURE_TYPES", unset = "8")
 top_n_overall <- as.integer(Sys.getenv("TOP_N_ORGANISMS_OVERALL", unset = "20"))
 top_n_per_type <- as.integer(Sys.getenv("TOP_N_ORGANISMS_PER_TYPE", unset = "10"))
 top_n_trends <- as.integer(Sys.getenv("TOP_N_ORGANISM_TRENDS", unset = "5"))
-plot_start_date <- config_value(config, c("plot_start_date", "study_start_date"), env = "PLOT_START_DATE", default = NA_character_)
-plot_end_date <- config_value(config, c("plot_end_date", "study_end_date"), env = "PLOT_END_DATE", default = NA_character_)
+plot_start_date <- study_settings$study_start_date
+plot_end_date <- study_settings$study_end_date
 
 if (is.na(row_path) || !nzchar(row_path)) {
   row_path <- latest_project_intermediate_file("^icu_culture_rows_.*\\.csv$", "cohort")

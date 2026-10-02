@@ -1,6 +1,6 @@
 # Running the culture-practices pipeline
 
-Copy `config/config_template.json` to ignored `config/config.json` and set site, repository, table paths, file type, and inclusive study dates. Install dependencies with `renv::restore()`.
+Copy `config/config_template.json` to ignored `config/config.json` and set site, repository/table paths, and file type. The study team maintains the shared inclusive dates in `utils/study_settings.R`, currently January 1, 2018–December 31, 2024. Culture coverage is assumed complete within that window. Install dependencies with `renv::restore()`.
 
 ```sh
 Rscript code/00_run_pipeline.R
@@ -29,13 +29,14 @@ Without `CLIF_RUN_ID`, standalone scripts use the original output/intermediate f
 
 Susceptibility analysis skips cleanly when the optional table is absent. Sites with that table must provide the standard mCIDE fields. `AST_MIN_TESTING_FRACTION` controls the minimum interpretable testing coverage for detection-rate models (default 0.5). Pair-specific tested-fraction models use interpretable tests and export coverage separately.
 
-Other overrides include `CLIF_CONFIG_PATH`, `CLIF_SITE_NAME`, `CLIF_TABLES_PATH`, `CLIF_FILE_TYPE`, `CLIF_REPO`, `STUDY_START_DATE`, `STUDY_END_DATE`, `PLOT_START_DATE`, `PLOT_END_DATE`, and plot-specific top-N controls. Verify plots cover the intended full analysis window. `WRITE_ROW_LEVEL_INTERMEDIATES=false` is supported for cohort-only exports; the full pipeline requires private intermediates.
+Other overrides include `CLIF_CONFIG_PATH`, `CLIF_SITE_NAME`, `CLIF_TABLES_PATH`, `CLIF_FILE_TYPE`, `CLIF_REPO`, and plot-specific top-N controls. Verify plots cover the intended full analysis window. `WRITE_ROW_LEVEL_INTERMEDIATES=false` is supported for cohort-only exports; the full pipeline requires private intermediates.
 
 Definitions, model interpretation, mapping overrides, QC limitations, and AST testing rules are in [analysis_definitions.md](../docs/analysis_definitions.md).
 
 ## Verification
 
 ```sh
+Rscript tests/test_config.R
 Rscript tests/test_core.R
 Rscript tests/run_integration.R
 ```

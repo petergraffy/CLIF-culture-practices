@@ -1,8 +1,8 @@
 # Aggregate data continuity checks. No source specimen remapping is inferred automatically.
 suppressPackageStartupMessages({library(dplyr); library(readr); library(tidyr); library(lubridate); library(glue)})
 source("utils/clif_io.R")
-start <- safe_ts(config_value(config, "study_start_date", env = "STUDY_START_DATE", default = NA_character_))
-end <- safe_ts(config_value(config, "study_end_date", env = "STUDY_END_DATE", default = NA_character_)) + days(1)
+start <- safe_ts(study_settings$study_start_date)
+end <- safe_ts(study_settings$study_end_date) + days(1)
 micro <- read_tbl("microbiology_culture") %>% transmute(collect_dttm = safe_ts(collect_dttm), fluid_name = clean_micro_label(fluid_name), fluid_category = coalesce(clean_micro_label(fluid_category), "missing"), method_category = clean_micro_label(method_category)) %>% filter(method_category == "culture", !is.na(collect_dttm)) %>% filter(is.na(start) | collect_dttm >= start, is.na(end) | collect_dttm < end) %>% mutate(calendar_month = floor_date(collect_dttm, "month"))
 if (!nrow(micro)) stop("No culture rows for continuity QC.")
 last_month <- max(micro$calendar_month)

@@ -13,7 +13,7 @@ if(dir.exists(out_dir) && length(list.files(out_dir,all.files=TRUE,no..=TRUE)))s
 registry <- read_csv(registry_path,show_col_types=FALSE,col_types=cols(site_name=col_character(),run_dir=col_character(),validated_start_date=col_date(),validated_end_date=col_date(),culture_qc_pass=col_logical(),ast_qc_pass=col_logical()))
 inputs <- read_pooling_sites(registry)
 dir.create(out_dir,recursive=TRUE,showWarnings=FALSE)
-files <- c("code/11_pool_site_trends.R","utils/pooling.R","utils/trends.R","utils/susceptibility.R","renv.lock")
+files <- c("code/11_pool_site_trends.R","utils/pooling.R","utils/trends.R","utils/susceptibility.R","utils/study_settings.R","renv.lock")
 manifest <- list(analysis_status="running",started_utc=format(Sys.time(),tz="UTC",usetz=TRUE),registry_md5=unname(tools::md5sum(registry_path)),code_md5=as.list(tools::md5sum(files)),R_version=R.version.string,packages=as.list(setNames(vapply(c("mgcv","metafor","dplyr","ggplot2"),function(p)as.character(packageVersion(p)),character(1)),c("mgcv","metafor","dplyr","ggplot2"))),AST_MIN_TESTING_FRACTION=coverage_min,AST_MIN_LINKAGE_FRACTION=linkage_min,site_weighting="equal-site response-scale mean",meta_method="REML with modified Knapp-Hartung (SE floor)",joint_minimum_sites=3L)
 jsonlite::write_json(manifest,file.path(out_dir,"pooling_manifest.json"),pretty=TRUE,auto_unbox=TRUE)
 dir.create(file.path(out_dir,"source_snapshot"))

@@ -24,8 +24,8 @@ source("utils/clif_io.R")
 
 site_name <- clif_site_name
 tables_path <- clif_tables_path
-study_start_date <- config_value(config, "study_start_date", env = "STUDY_START_DATE", default = NA_character_)
-study_end_date <- config_value(config, "study_end_date", env = "STUDY_END_DATE", default = NA_character_)
+study_start_date <- study_settings$study_start_date
+study_end_date <- study_settings$study_end_date
 write_row_level_intermediates <- tolower(Sys.getenv("WRITE_ROW_LEVEL_INTERMEDIATES", unset = "true")) %in% c("true", "1", "yes", "y")
 
 

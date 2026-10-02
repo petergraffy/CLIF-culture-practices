@@ -40,4 +40,5 @@ config_value <- function(config, fields, env = NULL, default = NULL, required = 
   default
 }
 
+source("utils/study_settings.R")
 config <- load_config(required = TRUE)

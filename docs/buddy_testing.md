@@ -2,9 +2,10 @@
 
 ## Run and execution checks
 
-Use a site with both `microbiology_culture` and `microbiology_susceptibility`. Restore pinned packages with `renv::restore()`, copy `config/config_template.json` to the ignored `config/config.json`, and set local paths/site/date window. Start with `culture_coverage_validated: false`.
+Use a site with both `microbiology_culture` and `microbiology_susceptibility`. Restore pinned packages with `renv::restore()`, copy `config/config_template.json` to the ignored `config/config.json`, and set the site label, local repository/table paths, and file type. The study team maintains the shared dates in `utils/study_settings.R` (currently January 1, 2018–December 31, 2024); culture coverage is assumed complete within that window.
 
 ```sh
+Rscript tests/test_config.R
 Rscript tests/test_core.R
 Rscript tests/test_pooling.R
 Rscript tests/run_integration.R
@@ -19,9 +20,9 @@ Check the completed run manifest and empty privacy audit. Keep private intermedi
 2. Trace a sample of `organism_id` links in private intermediates. Include polymicrobial specimens, repeated records, missing IDs, duplicate IDs across events, and unmatched AST records. Missing-ID isolates must remain in coverage denominators. A two-linked/eight-unlinked sample should show 20% linkage and 20% testing when both linked isolates are tested, even though linkable-only testing is 100%.
 3. Reconcile canonical organism, antimicrobial and S/NS categories with the pinned mCIDE. Verify susceptible and non-susceptible reports separately; raw MIC/text never supplies a missing standardized interpretation. Confirm how the local ETL maps intermediate/SDD and breakpoint revisions. Conflicting S and NS records for one isolate/drug become indeterminate; the schema has no timestamp to adjudicate them.
 4. Compare S, NS, indeterminate, unavailable and unreported-test counts for selected organism–drug–specimen months with source reports. The tested-fraction denominator is S + NS; the testing-coverage denominator is all observed positive isolates of that organism. An organism may be S to one drug and NS to another; no universal resistance label or inferred MRSA/VRE/ESBL/CRE phenotype is assigned by this analysis.
-5. Test months with organisms but no interpretable AST, and months with zero organisms while cultures continue. The former must stay unknown. The latter enter detection-rate models only after coverage validation; their tested fraction stays missing. A month without specimen-source activity is excluded even when the flag is TRUE.
+5. Test months with organisms but no interpretable AST, and months with zero organisms while cultures continue. The former must stay unknown. The latter enter detection-rate models under the shared complete-coverage assumption; their tested fraction stays missing. A month without specimen-source activity is excluded.
 
-After source coverage is confirmed for the full configured window, set `culture_coverage_validated: true` and run a new isolated pipeline. If only part is valid, restrict the dates first. Defaults are 90% linkage completeness and 50% testing coverage for rate models; these are QC screens. Inspect losses at these thresholds and compare plausible stricter thresholds before drawing conclusions.
+Report source or mapping gaps to the study team so analysis restrictions can be coordinated. Defaults are 90% linkage completeness and 50% testing coverage for rate models; these are QC screens. Inspect losses at these thresholds and compare plausible stricter thresholds before drawing conclusions.
 
 ## Scientific sensitivity checks
 

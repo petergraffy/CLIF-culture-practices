@@ -68,8 +68,8 @@ site_name <- clif_site_name
 event_path <- Sys.getenv("ICU_CULTURE_EVENTS_PATH", unset = NA_character_)
 top_n_types <- as.integer(Sys.getenv("TOP_N_CULTURE_TYPES", unset = "8"))
 top_n_positivity_types <- as.integer(Sys.getenv("TOP_N_POSITIVITY_FLUID_CATEGORIES", unset = as.character(top_n_types)))
-plot_start_date <- config_value(config, c("plot_start_date", "study_start_date"), env = "PLOT_START_DATE", default = NA_character_)
-plot_end_date <- config_value(config, c("plot_end_date", "study_end_date"), env = "PLOT_END_DATE", default = NA_character_)
+plot_start_date <- study_settings$study_start_date
+plot_end_date <- study_settings$study_end_date
 
 if (is.na(event_path) || !nzchar(event_path)) {
   event_path <- latest_project_intermediate_file("^icu_culture_events_.*\\.csv$", "cohort")

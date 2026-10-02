@@ -30,7 +30,7 @@ read_pooling_sites <- function(registry) {
     m <- jsonlite::fromJSON(manifest_path)
     if (!identical(m$analysis_status, "completed") || !identical(m$site_name, r$site_name)) stop("Run incomplete or site does not match manifest: ", r$site_name)
     if (is.null(m$code_and_mapping_md5) || is.null(m$study_start_date) || is.null(m$study_end_date)) stop("Run lacks required provenance.")
-    comparable <- c("utils/culture_core.R","utils/trends.R","utils/susceptibility.R","code/08_organism_trends.R","code/09_susceptibility_trends.R","config/mcide/clif_microbiology_susceptibility_category.csv","config/mcide/clif_microbiology_susceptibility_antibiotics_category.csv")
+    comparable <- c("utils/study_settings.R","utils/culture_core.R","utils/trends.R","utils/susceptibility.R","code/08_organism_trends.R","code/09_susceptibility_trends.R","config/mcide/clif_microbiology_susceptibility_category.csv","config/mcide/clif_microbiology_susceptibility_antibiotics_category.csv")
     source_hashes <- unlist(m$code_and_mapping_md5[comparable])
     if(length(source_hashes)!=length(comparable) || anyNA(source_hashes))stop("Run lacks comparable source/schema hashes: ",r$site_name)
     if(r$culture_qc_pass) {
@@ -66,7 +66,7 @@ read_pooling_sites <- function(registry) {
     if (r$ast_qc_pass) {
       x <- one_export(r$run_dir,"susceptibility","^monthly_organism_antimicrobial_susceptibility_.*[.]csv$",FALSE)
       if (!is.null(x)) {
-        if(!all(c("organism_category","antimicrobial_category","specimen_stratum","n_susceptible","n_non_susceptible","n_interpretable","testing_fraction","calendar_month","n_icu_days","n_culture_isolates","n_linkable_culture_isolates","n_observed_culture_events","n_positive_rows_missing_organism_category","culture_coverage_validated") %in% names(x)))stop("Susceptibility export schema invalid.")
+        if(!all(c("organism_category","antimicrobial_category","specimen_stratum","n_susceptible","n_non_susceptible","n_interpretable","testing_fraction","calendar_month","n_icu_days","n_culture_isolates","n_linkable_culture_isolates","n_observed_culture_events","n_positive_rows_missing_organism_category") %in% names(x)))stop("Susceptibility export schema invalid.")
         if("site_name" %in% names(x) && any(is.na(x$site_name) | x$site_name!=r$site_name))stop("AST export site does not match registry.")
         x<-x %>% dplyr::mutate(calendar_month=as.Date(calendar_month),site_name=r$site_name)
         if(anyNA(x$calendar_month) || any(lubridate::day(x$calendar_month)!=1))stop("Invalid AST calendar months.")
