@@ -36,6 +36,7 @@ Definitions, model interpretation, mapping overrides, QC limitations, and AST te
 ## Verification
 
 ```sh
+Rscript tests/test_preflight.R
 Rscript tests/test_config.R
 Rscript tests/test_core.R
 Rscript tests/run_integration.R
@@ -44,3 +45,5 @@ Rscript tests/run_integration.R
 The synthetic tests exercise stay/event boundaries, carry-in denominators, missing/mixed result categories, date-specific mappings, duplicate/conflicting AST reports, mCIDE field requirements, and count/proportion GAMs. Real susceptibility ETL still needs a buddy test at a site with both tables.
 
 `11_pool_site_trends.R` is a separate central workflow using completed aggregate runs and `config/pooling_sites.csv`; it is not invoked by the site runner. See `docs/pooling.md`.
+
+Dependency setup uses the committed `.Rprofile` and `renv/activate.R` bootstrap (renv 1.1.5). Restore with `Rscript -e 'renv::restore(prompt = FALSE)'` from the repository root. The site runner checks dependencies and table schemas before analysis, and writes aggregate date availability to `provenance/preflight_source_availability.csv` in the completed run.

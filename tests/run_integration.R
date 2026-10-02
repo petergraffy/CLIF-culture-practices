@@ -21,6 +21,8 @@ status <- system2(file.path(R.home("bin"),"Rscript"),c("code/00_run_pipeline.R")
 if(status!=0) {cat(tail(readLines(log),40),sep="\n");stop("Synthetic pipeline failed: ",log)}
 run <- list.dirs(file.path(scratch,"output","runs"),recursive=FALSE)
 stopifnot(length(run)==1)
+preflight<-read_csv(file.path(run,"provenance","preflight_source_availability.csv"),show_col_types=FALSE)
+stopifnot(nrow(preflight)==3,all(preflight$n_source_rows_in_study_window>0))
 source("utils/study_settings.R")
 manifest<-jsonlite::fromJSON(file.path(run,"provenance","run_manifest.json"))
 stopifnot(manifest$study_start_date==study_settings$study_start_date,manifest$study_end_date==study_settings$study_end_date)

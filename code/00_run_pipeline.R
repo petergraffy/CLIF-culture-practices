@@ -1,4 +1,6 @@
 # Single command creates an isolated, reproducible run; downstream scripts never select another run.
+source("utils/preflight.R")
+preflight_packages()
 suppressPackageStartupMessages(library(jsonlite))
 source("utils/config.R")
 if (nzchar(Sys.getenv("ICU_CULTURE_ROWS_PATH", "")) || nzchar(Sys.getenv("ICU_CULTURE_EVENTS_PATH", ""))) stop("Remove explicit intermediate path overrides for an isolated pipeline run.")
@@ -6,9 +8,11 @@ if (tolower(Sys.getenv("WRITE_ROW_LEVEL_INTERMEDIATES", "true")) %in% c("false",
 run_id <- paste0(format(Sys.time(), "%Y%m%d_%H%M%S"), "_", Sys.getpid())
 Sys.setenv(CLIF_RUN_ID = run_id)
 source("utils/clif_io.R")
+preflight <- run_site_preflight()
 manifest_dir <- project_output_dir("provenance")
+readr::write_csv(preflight$summary,file.path(manifest_dir,"preflight_source_availability.csv"))
 scripts <- c("01_identify_icu_culture_cohort.R", "10_quality_checks.R", "02_plot_culture_time_series.R", "04_plot_positive_organisms.R", "05_culture_rates_per_icu_admission.R", "06_icu_day_denominators_and_timing.R", "08_organism_trends.R", "09_susceptibility_trends.R", "07_prepare_site_exports.R")
-files <- c(list.files("code", full.names = TRUE, pattern = "[.]R$"), list.files("utils", full.names = TRUE, pattern = "[.]R$"), list.files("config", full.names = TRUE, pattern = "[.]csv$"), list.files("config/mcide", full.names = TRUE), if (file.exists("renv.lock")) "renv.lock" else character())
+files <- c(".Rprofile", "renv/activate.R", "renv/settings.json", list.files("code", full.names = TRUE, pattern = "[.]R$"), list.files("utils", full.names = TRUE, pattern = "[.]R$"), list.files("config", full.names = TRUE, pattern = "[.]csv$"), list.files("config/mcide", full.names = TRUE), if (file.exists("renv.lock")) "renv.lock" else character())
 config_path <- Sys.getenv("CLIF_CONFIG_PATH", "config/config.json")
 manifest <- list(run_id = run_id, site_name = clif_site_name, started_utc = format(Sys.time(), tz = "UTC", usetz = TRUE), config_md5 = unname(tools::md5sum(config_path)), study_start_date = study_settings$study_start_date, study_end_date = study_settings$study_end_date, code_and_mapping_md5 = as.list(tools::md5sum(files)), R_version = R.version.string, packages = as.list(setNames(vapply(c("dplyr", "tidyr", "readr", "lubridate", "mgcv", "ggplot2"), function(p) as.character(packageVersion(p)), character(1)), c("dplyr", "tidyr", "readr", "lubridate", "mgcv", "ggplot2"))), environment_overrides = as.list(Sys.getenv()[grepl("^(CLIF_|STUDY_|PLOT_|TOP_N_|AST_|TIMING_|WRITE_ROW_)", names(Sys.getenv()))]), analysis_status = "running")
 # Exact paths and environment values stay private.

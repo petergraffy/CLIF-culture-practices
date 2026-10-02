@@ -2,6 +2,25 @@
 
 This repository supports a CLIF-wide study of microbiology culture practices and culture results over time.
 
+## Quick start for sites
+
+Use R 4.4.2, the version recorded in `renv.lock`. From the repository root, restore dependencies, copy the config template, and edit its four local fields: `site_name`, `repo`, `tables_path`, and `file_type`.
+
+```sh
+Rscript -e 'renv::restore(prompt = FALSE)'
+cp config/config_template.json config/config.json
+```
+
+After editing `config/config.json`, run:
+
+```sh
+Rscript code/00_run_pipeline.R
+```
+
+Required tables are `hospitalization`, `adt`, and `microbiology_culture`. The pipeline first checks packages, table paths, required columns, and source dates. The study team maintains the shared 2018–2024 window. AST is optional and skips cleanly when absent. Parquet, CSV, and FST readers are included in the pinned dependencies.
+
+Return one completed `output/runs/<run_id>/` folder after reviewing its run manifest, `provenance/preflight_source_availability.csv`, continuity/linkage QC, and empty privacy audit. Report any shortened date coverage or mapping changes with the run. Keep `config/config.json` and `data/intermediate/` local. See the [buddy-testing guide](docs/buddy_testing.md) for AST reconciliation.
+
 ## Study Objective
 
 Describe variation in microbiology culture acquisition across CLIF sites and characterize positive culture rates and organism distributions among patients with any culture collected.
@@ -108,7 +127,7 @@ This screens organism detection with negative-binomial GAMs, smooth calendar tim
 
 ## Recommended Multi-Site Run
 
-For each site, create `config/config.json` with `site_name`, `repo`, `tables_path`, `file_type`, and the study window. Install pinned dependencies with `renv::restore()`, then run from the repository root:
+For each site, create `config/config.json` with only `site_name`, `repo`, `tables_path`, and `file_type`. Install pinned dependencies with `renv::restore()`, then run from the repository root:
 
 ```sh
 Rscript code/00_run_pipeline.R

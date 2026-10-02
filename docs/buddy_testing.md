@@ -5,6 +5,7 @@
 Use a site with both `microbiology_culture` and `microbiology_susceptibility`. Restore pinned packages with `renv::restore()`, copy `config/config_template.json` to the ignored `config/config.json`, and set the site label, local repository/table paths, and file type. The study team maintains the shared dates in `utils/study_settings.R` (currently January 1, 2018–December 31, 2024); culture coverage is assumed complete within that window.
 
 ```sh
+Rscript tests/test_preflight.R
 Rscript tests/test_config.R
 Rscript tests/test_core.R
 Rscript tests/test_pooling.R
@@ -33,3 +34,5 @@ These checks require site laboratory context and additional local reruns; they a
 - **Case/specimen mix:** compare overall and specimen-stratified results and review laboratory/platform or service changes. Neither ICU-day normalization nor seasonal adjustment controls clinical case mix.
 
 Before pooling, register only completed runs with matching code/mCIDE hashes and source-validated dates. Set `culture_qc_pass` and `ast_qc_pass` after review. Preserve the review record locally. Report sparse-model exclusions, coverage changes, FDR and residual diagnostics alongside any increase/decrease label.
+
+Dependency setup uses the committed `.Rprofile` and `renv/activate.R` bootstrap (renv 1.1.5). Restore with `Rscript -e 'renv::restore(prompt = FALSE)'` from the repository root. The site runner checks dependencies and table schemas before analysis, and writes aggregate date availability to `provenance/preflight_source_availability.csv` in the completed run.
