@@ -183,13 +183,18 @@ rows <- read_clif_csv(row_path, show_col_types = FALSE) %>%
   filter(is.na(study_start_dttm) | collect_dttm >= study_start_dttm) %>%
   filter(is.na(study_end_dttm) | collect_dttm < study_end_dttm)
 
-if (nrow(rows) == 0) {
-  stop("No positive organism rows after filters.")
-}
-
 observation_stays <- read_culture_data(study_start_dttm, study_end_dttm)$icu_admissions
 month_seq <- seq(floor_date(min(observation_stays$icu_in_dttm_clipped), "month"), floor_date(max(observation_stays$icu_out_dttm_clipped - seconds(1)), "month"), by = "month")
 monthly_icu_denominators <- build_monthly_icu_denominators(month_seq, study_start_dttm, study_end_dttm)
+
+if (nrow(rows) == 0) {
+  out_dir <- project_output_dir("organism_trends"); stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+  write_csv(tibble(calendar_month=as.POSIXct(character(),tz="UTC"),organism_category=character(),n_detection_events=integer(),site_name=character()),file.path(out_dir,glue("monthly_all_organism_detection_counts_{site_name}_{stamp}.csv")))
+  write_csv(monthly_icu_denominators,file.path(out_dir,glue("monthly_icu_denominators_for_organism_trends_{site_name}_{stamp}.csv")))
+  write_csv(tibble(site_name=site_name,analysis_status="skipped_no_positive_organisms"),file.path(out_dir,glue("organism_trend_availability_{site_name}_{stamp}.csv")))
+  message("No positive organisms; trend models skipped.")
+  quit(save="no",status=0)
+}
 
 top_organism_labels <- rows %>%
   distinct(detection_event_id, organism_category_label) %>%

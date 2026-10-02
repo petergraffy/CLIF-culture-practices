@@ -34,7 +34,7 @@ read_pooling_sites <- function(registry) {
     source_hashes <- unlist(m$code_and_mapping_md5[comparable])
     if(length(source_hashes)!=length(comparable) || anyNA(source_hashes))stop("Run lacks comparable source/schema hashes: ",r$site_name)
     if(r$culture_qc_pass) {
-      if (!identical(unname(source_hashes["utils/trends.R"]), unname(tools::md5sum("utils/trends.R")))) stop("Central and site temporal model code differs; rerun sites with current code.")
+      if (!identical(unname(source_hashes), unname(tools::md5sum(comparable)))) stop("Central and site analysis/schema code differs; rerun sites with current code.")
       if(is.null(reference_hashes))reference_hashes<-source_hashes else if(!identical(source_hashes,reference_hashes))stop("Site runs use different analysis or mCIDE versions; rerun with matching code.")
     }
     start <- as.Date(r$validated_start_date); end <- as.Date(r$validated_end_date)
@@ -66,7 +66,7 @@ read_pooling_sites <- function(registry) {
     if (r$ast_qc_pass) {
       x <- one_export(r$run_dir,"susceptibility","^monthly_organism_antimicrobial_susceptibility_.*[.]csv$",FALSE)
       if (!is.null(x)) {
-        if(!all(c("organism_category","antimicrobial_category","specimen_stratum","n_susceptible","n_non_susceptible","n_interpretable","testing_fraction","calendar_month","n_icu_days") %in% names(x)))stop("Susceptibility export schema invalid.")
+        if(!all(c("organism_category","antimicrobial_category","specimen_stratum","n_susceptible","n_non_susceptible","n_interpretable","testing_fraction","calendar_month","n_icu_days","n_culture_isolates","n_linkable_culture_isolates","n_observed_culture_events","n_positive_rows_missing_organism_category","culture_coverage_validated") %in% names(x)))stop("Susceptibility export schema invalid.")
         if("site_name" %in% names(x) && any(is.na(x$site_name) | x$site_name!=r$site_name))stop("AST export site does not match registry.")
         x<-x %>% dplyr::mutate(calendar_month=as.Date(calendar_month),site_name=r$site_name)
         if(anyNA(x$calendar_month) || any(lubridate::day(x$calendar_month)!=1))stop("Invalid AST calendar months.")
@@ -76,7 +76,9 @@ read_pooling_sites <- function(registry) {
         if(any(!is.finite(x$n_susceptible)|!is.finite(x$n_non_susceptible)|!is.finite(x$n_interpretable)|x$n_susceptible+x$n_non_susceptible!=x$n_interpretable))stop("Invalid susceptibility counts.")
         matched <- x %>% dplyr::left_join(dplyr::select(den,calendar_month,validated_icu_days=n_icu_days),by="calendar_month")
         if(any(!is.finite(matched$validated_icu_days) | !is.finite(matched$n_icu_days) | abs(matched$n_icu_days-matched$validated_icu_days)>1e-8))stop("AST denominators do not match culture denominators.")
-        ast[[r$site_name]]<-x %>% dplyr::select(-dplyr::any_of("n_observed_culture_events")) %>% dplyr::left_join(dplyr::select(den,calendar_month,n_observed_culture_events),by="calendar_month")
+        source_check <- x %>% dplyr::left_join(dplyr::select(den,calendar_month,total_culture_events=n_observed_culture_events),by="calendar_month")
+        if(any(!is.finite(source_check$n_observed_culture_events) | source_check$n_observed_culture_events<0 | source_check$n_observed_culture_events>source_check$total_culture_events))stop("Invalid specimen-specific source coverage.")
+        ast[[r$site_name]]<-x
       }
     }
   }
@@ -89,7 +91,7 @@ read_pooling_sites <- function(registry) {
   list(culture=grid,ast=dplyr::bind_rows(ast),audit=dplyr::bind_rows(audit),hashes=dplyr::bind_rows(hashes),source_paths=source_paths)
 }
 
-common_pooling_months <- function(data, denominator, count, proportion=FALSE, coverage_min=0.5) {
+common_pooling_months <- function(data, denominator, count, proportion=FALSE, coverage_min=0.5,linkage_min=0.9) {
   pooling_forbidden(data)
   if (anyDuplicated(data[c("site_name","calendar_month")])) stop("Duplicate site/month rows within pooling screen.")
   if (any(!is.finite(data[[count]]) | data[[count]] < 0 | data[[count]] != round(data[[count]]))) stop("Invalid monthly counts.")
@@ -97,7 +99,10 @@ common_pooling_months <- function(data, denominator, count, proportion=FALSE, co
   sites <- unique(data$site_name)
   x <- data %>% dplyr::filter(is.finite(.data[[denominator]]),.data[[denominator]]>0)
   if ("n_observed_culture_events" %in% names(x)) x <- dplyr::filter(x,n_observed_culture_events>0)
-  if ("testing_fraction" %in% names(x) && !proportion) x <- dplyr::filter(x,is.finite(testing_fraction),testing_fraction>=coverage_min)
+  if ("testing_fraction" %in% names(x)) {
+    x <- screen_susceptibility_months(x,coverage_min,linkage_min)
+    x <- if(proportion) dplyr::filter(x,fraction_model_eligible) else dplyr::filter(x,rate_model_eligible)
+  }
   months <- x %>% dplyr::count(calendar_month) %>% dplyr::filter(n==length(sites)) %>% dplyr::pull(calendar_month)
   x %>% dplyr::filter(calendar_month %in% months) %>% dplyr::arrange(site_name,calendar_month)
 }
@@ -149,8 +154,8 @@ fit_joint_pool <- function(data,denominator,count,proportion=FALSE) {
   list(summary=tibble::tibble(model_status="estimated",n_sites=nlevels(dat$site),theta=if(proportion)NA_real_ else fit$family$getTheta(TRUE),long_term_edf=unname(summary(fit)$s.table[1,"edf"]),residual_dependence_flag=if(anyNA(diagnostics$residual_dependence_flag))NA else any(diagnostics$residual_dependence_flag),model_warning=if(length(warnings))paste(unique(warnings),collapse="; ") else NA_character_),curves=dplyr::bind_rows(curves,dplyr::bind_rows(pooled)),diagnostics=diagnostics)
 }
 
-pool_screen <- function(data,denominator,count,proportion=FALSE,coverage_min=0.5) {
-  common <- common_pooling_months(data,denominator,count,proportion,coverage_min)
+pool_screen <- function(data,denominator,count,proportion=FALSE,coverage_min=0.5,linkage_min=0.9) {
+  common <- common_pooling_months(data,denominator,count,proportion,coverage_min,linkage_min)
   site_names <- sort(unique(data$site_name))
   effects <- dplyr::bind_rows(lapply(site_names,function(site){
     x <- dplyr::filter(common,site_name==site)
@@ -164,10 +169,10 @@ pool_screen <- function(data,denominator,count,proportion=FALSE,coverage_min=0.5
   list(effects=effects,meta=dplyr::bind_cols(window,meta_pool(effects)),joint=dplyr::bind_cols(window,joint$summary),curves=joint$curves,diagnostics=joint$diagnostics)
 }
 
-run_pooling <- function(inputs,coverage_min=0.5) {
+run_pooling <- function(inputs,coverage_min=0.5,linkage_min=0.9) {
   outputs <- list(effects=list(),meta=list(),joint=list(),curves=list(),diagnostics=list())
   add <- function(data,keys,denominator,count,proportion=FALSE) {
-    result <- pool_screen(data,denominator,count,proportion,coverage_min)
+    result <- pool_screen(data,denominator,count,proportion,coverage_min,linkage_min)
     for(name in names(outputs)) {
       x <- result[[name]]
       if(nrow(x)) outputs[[name]][[length(outputs[[name]])+1]] <<- dplyr::bind_cols(keys[rep(1,nrow(x)),,drop=FALSE],x)

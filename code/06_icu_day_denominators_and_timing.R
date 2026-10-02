@@ -99,10 +99,8 @@ monthly_icu_days <- icu_admissions %>%
     fill = list(n_icu_days = 0, n_icu_admissions_contributing_days = 0L)
   )
 
-monthly_icu_admissions <- icu_admissions %>%
-  count(icu_admission_month, name = "n_icu_admissions") %>%
-  complete(icu_admission_month = month_seq, fill = list(n_icu_admissions = 0L)) %>%
-  rename(calendar_month = icu_admission_month)
+monthly_icu_admissions <- monthly_icu_denominators(icu_admissions, month_seq) %>%
+  select(calendar_month, n_icu_admissions)
 
 top_types <- icu_culture_events %>%
   count(specimen_type, sort = TRUE) %>%
@@ -301,6 +299,7 @@ top_organisms <- positive_organism_detections %>%
   count(organism_name, organism_label, sort = TRUE) %>%
   slice_head(n = top_n_organisms)
 
+if(nrow(top_organisms)) {
 first_organism_detection_by_admission <- positive_organism_detections %>%
   inner_join(
     top_organisms %>% select(organism_name, organism_label),
@@ -338,6 +337,10 @@ cumulative_top_organism_incidence_hour <- top_organisms %>%
     organism_label = fct_reorder(organism_label, n_total_detection_events, .desc = TRUE)
   ) %>%
   arrange(organism_label, icu_hour)
+
+} else {
+  cumulative_top_organism_incidence_hour <- tibble(organism_name=character(),organism_label=character(),n_total_detection_events=integer(),icu_hour=integer(),n_first_detection_icu_admissions=integer(),n_icu_admissions_with_organism_by_hour=integer(),n_icu_admissions=integer(),site_name=character(),care_setting=character(),organism_first_collected_per_100_icu_admissions=numeric())
+}
 
 culture_type_palette <- clif_specimen_type_palette
 specimen_levels <- levels(monthly_events_by_type_per_icu_day$specimen_type)
@@ -452,7 +455,7 @@ p_cumulative_events_by_type <- ggplot(
   guides(color = guide_legend(ncol = 4, byrow = FALSE))
 
 organism_palette <- setNames(
-  hue_pal()(nrow(top_organisms)),
+  if(nrow(top_organisms)) hue_pal()(nrow(top_organisms)) else character(),
   top_organisms$organism_label
 )
 
@@ -475,6 +478,10 @@ p_cumulative_top_organism_incidence <- ggplot(
   plot_theme +
   guides(color = guide_legend(ncol = 2, byrow = TRUE, label.theme = element_text(size = 9))) +
   scale_color_manual(values = organism_palette, labels = label_wrap(42))
+
+if (!nrow(cumulative_top_organism_incidence_hour)) {
+  p_cumulative_top_organism_incidence <- ggplot()+annotate("text",x=0,y=0,label="No positive organisms in the observation window")+theme_void()
+}
 
 out_dir <- project_output_dir("icu_day_timing")
 stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")

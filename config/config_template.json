@@ -4,5 +4,6 @@
     "tables_path": "/path/to/clif/tables",
     "file_type": "parquet",
     "study_start_date": "2018-01-01",
-    "study_end_date": "2025-12-31"
+    "study_end_date": "2025-12-31",
+    "culture_coverage_validated": false
 }

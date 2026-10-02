@@ -68,3 +68,53 @@ test_that("season-adjusted curves match endpoint contrasts without changing infe
  expect_true(all(curve$ci_low <= curve$fitted_value & curve$ci_high >= curve$fitted_value))
  expect_lt(sd(diff(log(curve$fitted_value))),sd(diff(log(seasonal_fit$predictions$fitted_value)))/5)
 })
+
+test_that("mid-month carry-in never counts as a new admission", {
+ stays<-tibble(icu_admission_month=ts("2020-01-01"),icu_in_dttm=ts("2020-01-05"),icu_in_dttm_clipped=ts("2020-01-15"),icu_out_dttm_clipped=ts("2020-01-25"))
+ den<-monthly_icu_denominators(stays,ts("2020-01-01"))
+ expect_equal(den$n_icu_admissions,0L);expect_equal(den$n_icu_days,10)
+})
+
+buddy_months<-seq(ts("2018-01-01"),by="month",length.out=48)
+buddy_rows<-tibble(organism_id=paste0("o",seq_len(48)),culture_event_id=seq_len(48),patient_id="p",hospitalization_id="h",positive_culture=TRUE,organism_category=rep(c("escherichia_coli","staphylococcus_aureus"),each=24),fluid_category="blood_buffy",collect_dttm=buddy_months+days(1))
+buddy_ast<-tibble(organism_id=paste0("o",seq_len(24)),antimicrobial_category="ceftriaxone",susceptibility_category="non_susceptible")
+buddy_den<-tibble(calendar_month=buddy_months,n_icu_days=1000,n_icu_admissions=100L)
+test_that("disappearance retains validated zero months but never invents tested fractions", {
+ result<-build_susceptibility_analysis(buddy_rows,buddy_ast,buddy_den,culture_coverage_validated=TRUE)
+ x<-filter(result$monthly,specimen_stratum=="Overall")
+ expect_equal(nrow(x),48L);expect_true(all(x$rate_model_eligible))
+ expect_true(all(x$observation_status[25:48]=="organism_not_detected"))
+ expect_true(all(x$non_susceptible_per_100_icu_days[25:48]==0))
+ expect_true(all(is.na(x$non_susceptible_fraction[25:48])))
+ # No positive evidence of complete source coverage means zero months stay unavailable.
+ unvalidated<-build_susceptibility_analysis(buddy_rows,buddy_ast,buddy_den)$monthly
+ expect_true(all(filter(unvalidated,n_culture_isolates==0)$observation_status=="zero_unvalidated_source"))
+ gap<-build_susceptibility_analysis(buddy_rows[-48,],buddy_ast,buddy_den,culture_coverage_validated=TRUE)$monthly
+ expect_true(all(filter(gap,calendar_month==buddy_months[48])$observation_status=="source_unavailable"))
+ incomplete<-buddy_rows;incomplete$organism_category[48]<-NA_character_
+ unknown<-build_susceptibility_analysis(incomplete,buddy_ast,buddy_den,culture_coverage_validated=TRUE)$monthly
+ expect_true(all(filter(unknown,calendar_month==buddy_months[48])$observation_status=="organism_identification_incomplete"))
+})
+test_that("testing coverage includes isolates missing linkage IDs", {
+ rows<-buddy_rows[rep(1,10),];rows$culture_event_id<-1:10;rows$organism_id<-c("a","b",rep(NA_character_,8))
+ ast<-tibble(organism_id=c("a","b"),antimicrobial_category="ceftriaxone",susceptibility_category="susceptible")
+ x<-build_susceptibility_analysis(rows,ast,buddy_den)$monthly %>% filter(calendar_month==buddy_months[1],specimen_stratum=="Overall")
+ expect_equal(x$n_culture_isolates,10L);expect_equal(x$n_linkable_culture_isolates,2L)
+ expect_equal(x$testing_fraction,0.2);expect_equal(x$testing_fraction_linkable,1)
+ expect_equal(x$observation_status,"insufficient_linkage");expect_false(x$rate_model_eligible);expect_false(x$fraction_model_eligible)
+})
+test_that("AST availability distinguishes failed linkage and uninterpretable reports", {
+ orphan<-buddy_ast;orphan$organism_id<-paste0("orphan",1:24)
+ expect_equal(build_susceptibility_analysis(buddy_rows,orphan,buddy_den)$analysis_status,"no_linked_icu_tests")
+ unknown<-buddy_ast;unknown$susceptibility_category<-NA_character_
+ expect_equal(build_susceptibility_analysis(buddy_rows,unknown,buddy_den)$analysis_status,"no_interpretable_tests")
+ empty<-filter(buddy_rows,FALSE)
+ expect_equal(build_susceptibility_analysis(empty,buddy_ast,buddy_den)$analysis_status,"no_linkable_icu_isolates")
+})
+
+test_that("missing-ID fallback isolates with different source labels remain separate", {
+ rows<-buddy_rows[rep(1,3),];rows$organism_id<-c("a",NA_character_,NA_character_);rows$organism_name<-c("E. coli","E. coli variant 1","E. coli variant 2")
+ ast<-tibble(organism_id="a",antimicrobial_category="ceftriaxone",susceptibility_category="susceptible")
+ x<-build_susceptibility_analysis(rows,ast,buddy_den)$monthly %>% filter(calendar_month==buddy_months[1],specimen_stratum=="Overall")
+ expect_equal(x$n_culture_isolates,3L);expect_equal(x$testing_fraction,1/3)
+})

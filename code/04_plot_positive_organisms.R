@@ -326,7 +326,11 @@ positive_rows <- rows %>%
   filter(is.na(plot_end_dttm) | collect_dttm < plot_end_dttm)
 
 if (nrow(positive_rows) == 0) {
-  stop("No positive organism rows after filters.")
+  out_dir <- project_output_dir("organisms")
+  stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+  write_csv(tibble(site_name=site_name,analysis_status="skipped_no_positive_organisms"),file.path(out_dir,glue("organism_analysis_availability_{site_name}_{stamp}.csv")))
+  message("No positive organisms; distribution plots skipped.")
+  quit(save="no",status=0)
 }
 
 if (!is.na(plot_start_dttm)) message("Plot start: ", plot_start_dttm)

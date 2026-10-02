@@ -42,7 +42,7 @@ Reference: https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/negbin.html
 
 ## Susceptibility analysis
 
-Sites with both microbiology tables run `09_susceptibility_trends.R`. Missing susceptibility tables produce an availability record and a clean skip. Raw organism resistance names remain a separate text-only screen in script 08; they do not substitute for susceptibility tests.
+Sites with both microbiology tables run `09_susceptibility_trends.R`. Missing susceptibility tables produce an availability record and a clean skip. A present table separately reports no linkable ICU isolates, no linked ICU tests, no interpretable tests, insufficient model data, completed analysis, or failure. Sites with observed cultures but no positive organisms complete the practices pipeline and explicitly skip organism models. Raw organism resistance names remain a separate text-only screen in script 08; they do not substitute for susceptibility tests.
 
 Pinned mCIDE files in `config/mcide` were obtained from the CLIF main branch on October 2, 2026:
 https://github.com/Common-Longitudinal-ICU-data-Format/CLIF/tree/main/mCIDE/microbiology_susceptibility
@@ -55,10 +55,16 @@ Analyses are organism–antimicrobial specific, overall and stratified by specim
 
 - Susceptible and non-susceptible isolate detections per 100 ICU days, with NB GAM net-change contrasts.
 - Non-susceptible fraction among interpretable tests, with a quasi-binomial GAM using the same flexible time and seasonal terms; its endpoint effect is an annualized odds ratio, not a rate ratio.
-- Testing coverage: interpretable tests / all ID-linked positive isolates of that organism, plus unavailable, indeterminate, conflicting, and absent tests.
+- Testing coverage: interpretable tests / all observed positive isolates of that organism, including isolates missing `organism_id`; companion coverage among linkable isolates; monthly linkage completeness; unavailable, indeterminate, conflicting, and absent tests.
 - Fitted curves, confidence intervals, model status, endpoint FDR, and residual flags.
 
-Rate models include only months with at least `AST_MIN_TESTING_FRACTION` interpretable coverage (default 0.5). Months with zero interpretable tests have missing displayed detection rates and missing tested fractions, not apparent absence of non-susceptibility. Fraction models use months with interpretable tests; at least 24 usable months, 30 interpretable tests, and 10 observations in each outcome category are required. FDR families are outcome × specimen stratum within site.
+Positive-organism months require at least `AST_MIN_LINKAGE_FRACTION` linkage completeness (default 0.9). Rate models additionally require `AST_MIN_TESTING_FRACTION` interpretable testing / all observed positive isolates (default 0.5). These are QC screening defaults, not validated statistical cutoffs. Fraction models require adequate linkage and at least one interpretable test, without the rate-model testing threshold.
+
+A month with zero observed isolates for an already-observed organism–drug–specimen pair contributes zero S and NS detections only when `culture_coverage_validated` is TRUE, the specimen stratum has culture-source activity, there are no positive rows with missing organism categories in that stratum, and ICU exposure is positive. The flag defaults to FALSE and must be declared only after local reconciliation of source coverage and mappings over the configured window. Restrict the window if only part is validated. `AST_CULTURE_COVERAGE_VALIDATED` overrides the config flag. No tests or tested fraction are invented for these zero-organism months. A drug pair never observed at a site remains absent.
+
+Months containing organisms but no interpretable tests have unknown displayed S/NS rates and tested fractions. Each aggregate row records `observation_status`, `rate_model_eligible`, `fraction_model_eligible`, and the thresholds used. Missing source activity, incomplete organism identification, unvalidated zeros, poor linkage and inadequate testing are explicit exclusions. Linkage QC is exported by month × organism × specimen, independently of whether a drug links successfully.
+
+AST plots show observed points with eligibility symbols and season-adjusted fitted GAM curves with pointwise 95% CIs, plus a companion linkage/testing coverage figure. Fitted predictions are exported from the same fit as the model summary. Fraction models require at least 24 usable months, 30 interpretable tests, and 10 observations in each outcome category. FDR families are outcome × specimen stratum within site.
 
 These describe clinically tested isolates, not population resistance prevalence. Testing selection, repeat cultures, changing panels, breakpoint revisions, and specimen/case mix can affect trends. Pooling requires a common observation window, stable mappings, comparable panels, and site-level QC. Sites should consider first-isolate and stable-panel sensitivities before inferential pooling.
 
@@ -68,7 +74,7 @@ Run `Rscript code/00_run_pipeline.R` from the repository root. Every run has its
 
 The run manifest records config/code/mapping hashes, R/package versions, date window, and completion status. Exact source, mapping, lockfile, and config snapshots are retained with the private run provenance, including uncommitted code. Input metadata records filenames, sizes, and modification times; source table content is not hashed automatically. Exact local paths/environment overrides are private. Export audit rejects event/organism/patient/stay identifiers and clinical timestamps, including the new event IDs. It is a column-name audit, not small-cell suppression or a replacement for site release review.
 
-Use `renv::restore()` to install pinned dependencies. Tests: `Rscript tests/test_core.R` and `Rscript tests/run_integration.R`. UCMC cannot validate real susceptibility ETL; synthetic tests exercise the standardized schema and optional-table behavior. A site with real AST is still needed for clinical validation.
+Use `renv::restore()` to install pinned dependencies. Tests: `Rscript tests/test_core.R` and `Rscript tests/run_integration.R`. UCMC cannot validate real susceptibility ETL; synthetic tests exercise the standardized schema and optional-table behavior. A site with real AST is still needed for clinical validation. See the [buddy-testing guide](buddy_testing.md) for source reconciliation and repeat-isolate/panel sensitivity checks.
 
 ## Cross-site pooling
 

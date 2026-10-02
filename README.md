@@ -127,3 +127,5 @@ Do not commit PHI, row-level CLIF extracts, credentials, or institution-specific
 ## Cross-site pooling
 
 After sites generate completed aggregate runs, use `Rscript code/11_pool_site_trends.R config/pooling_sites.csv`. This refits site models over common validated months, pools endpoint changes with random-effects meta-analysis, and fits secondary joint season-adjusted curves. See [pooling definitions and registry setup](docs/pooling.md). No cross-site estimates are produced by the single-site runner.
+
+Before multisite testing, follow the [buddy-testing guide](docs/buddy_testing.md), including source linkage/coverage reconciliation at a site with real AST.

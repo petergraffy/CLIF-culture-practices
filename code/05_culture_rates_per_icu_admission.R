@@ -57,14 +57,12 @@ icu_culture_events <- culture_data$events %>% mutate(culture_month = floor_date(
 
 if (nrow(icu_admissions) == 0) stop("No ICU admissions after filters.")
 
-month_min <- min(c(icu_admissions$icu_admission_month, icu_culture_events$culture_month), na.rm = TRUE)
-month_max <- max(c(icu_admissions$icu_admission_month, icu_culture_events$culture_month), na.rm = TRUE)
+month_min <- floor_date(min(icu_admissions$icu_in_dttm_clipped), "month")
+month_max <- floor_date(max(icu_admissions$icu_out_dttm_clipped - seconds(1)), "month")
 month_seq <- seq(month_min, month_max, by = "month")
 
-monthly_icu_admissions <- icu_admissions %>%
-  count(icu_admission_month, name = "n_icu_admissions") %>%
-  complete(icu_admission_month = month_seq, fill = list(n_icu_admissions = 0L)) %>%
-  rename(calendar_month = icu_admission_month)
+monthly_icu_admissions <- monthly_icu_denominators(icu_admissions, month_seq) %>%
+  select(calendar_month, n_icu_admissions)
 
 top_types <- icu_culture_events %>%
   count(culture_type, sort = TRUE) %>%

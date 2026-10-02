@@ -97,7 +97,7 @@ read_culture_data <- function(start = as.POSIXct(NA), end = as.POSIXct(NA)) {
   build_culture_data(read_tbl("hospitalization"), read_tbl("adt"), read_tbl("microbiology_culture"), start, end, overrides)
 }
 monthly_icu_denominators <- function(stays, month_seq) {
-  admissions <- stays %>% dplyr::count(calendar_month = icu_admission_month, name = "n_icu_admissions")
+  admissions <- stays %>% dplyr::filter(icu_in_dttm >= icu_in_dttm_clipped) %>% dplyr::count(calendar_month = icu_admission_month, name = "n_icu_admissions")
   windows <- tibble::tibble(calendar_month = month_seq, month_end = month_seq %m+% lubridate::period(month = 1))
   days <- tidyr::crossing(stays, windows) %>% dplyr::mutate(overlap_start = pmax(icu_in_dttm_clipped, calendar_month), overlap_end = pmin(icu_out_dttm_clipped, month_end), overlap_days = as.numeric(difftime(overlap_end, overlap_start, units = "days"))) %>%
     dplyr::filter(overlap_days > 0) %>% dplyr::group_by(calendar_month) %>% dplyr::summarise(n_icu_days = sum(overlap_days), .groups = "drop")

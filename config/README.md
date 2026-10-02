@@ -28,7 +28,9 @@ The `.gitignore` file prevents `config/config.json` from being pushed to GitHub.
 
 ## Optional analyses and mapping corrections
 
-Susceptibility uses canonical CLIF mCIDE fields and the pinned reference CSVs in `mcide/`. Sites without the table skip this analysis. Set `AST_MIN_TESTING_FRACTION` (default 0.5) to control minimum interpretable testing coverage for detection-rate models.
+Susceptibility uses canonical CLIF mCIDE fields and the pinned reference CSVs in `mcide/`. Sites without the table skip this analysis. Set `AST_MIN_TESTING_FRACTION` (default 0.5) to control interpretable testing / all observed organism isolates for detection-rate models. `AST_MIN_LINKAGE_FRACTION` (default 0.9) controls linkable IDs / all observed organism isolates for both rate and fraction models.
+
+`culture_coverage_validated` defaults to FALSE. Set TRUE only after local source coverage and organism/specimen mapping reconciliation for the entire configured study window; this allows observed zero-organism months to enter AST detection-rate models. `AST_CULTURE_COVERAGE_VALIDATED` overrides this flag. Source activity alone does not validate coverage. See the [buddy-testing guide](../docs/buddy_testing.md).
 
 `specimen_category_overrides.csv` is initially empty. Add only source-verified exact fluid-name/original-category/date-range corrections, with a documented reason. No mapping is inferred from an order name alone.
 
