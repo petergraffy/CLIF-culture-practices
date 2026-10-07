@@ -1,6 +1,6 @@
 # Startup checks use aggregate metadata only; no patient identifiers are exported.
 preflight_packages <- function(file_type = NULL, check_versions = TRUE) {
-  packages <- c("jsonlite","dplyr","tidyr","readr","lubridate","ggplot2","glue","janitor","stringr","forcats","scales","purrr","mgcv")
+  packages <- c("jsonlite","dplyr","tidyr","readr","lubridate","ggplot2","glue","janitor","stringr","forcats","scales","purrr","mgcv","DBI","duckdb")
   packages <- unique(c(packages,if(identical(file_type,"parquet"))"arrow",if(identical(file_type,"fst"))"fst"))
   missing <- packages[!vapply(packages,requireNamespace,logical(1),quietly=TRUE)]
   if(length(missing)) stop("Preflight: missing packages: ",paste(missing,collapse=", "),". From the repository root, run Rscript -e 'renv::restore(prompt = FALSE)' and retry.",call.=FALSE)

@@ -1,0 +1,66 @@
+suppressPackageStartupMessages({library(dplyr);library(tidyr);library(lubridate)})
+source("utils/culture_core.R");source("utils/ase.R")
+check<-function(x,message){if(!isTRUE(x))stop(message);cat("PASS: ",message,"\n",sep="")}
+# Clinical boundary cases through the same SQL engine used at sites.
+ids<-as.character(1:10)
+h<-tibble(hospitalization_id=ids,patient_id=ids,admission_dttm=safe_ts("2020-01-01 12:00:00"),discharge_dttm=safe_ts("2020-01-10 12:00:00"),discharge_category="home",age_at_admission=60)
+h$discharge_category[8]<-"expired";h$discharge_dttm[8]<-safe_ts("2020-01-03 12:00:00")
+h$age_at_admission[10]<-17
+micro<-tibble(hospitalization_id=ids[-1],collect_dttm=safe_ts("2020-01-02 01:00:00"),fluid_category="blood_buffy",method_category="culture")
+med<-tidyr::crossing(hospitalization_id=ids[-1],day=1:4) %>% mutate(admin_dttm=safe_ts("2020-01-01 13:00:00")+days(day-1),med_category="ceftriaxone",med_group="cms_sepsis_qualifying_antibiotics",med_route_category="iv",med_dose=1,mar_action_group="administered") %>% select(-day)
+# Held doses never establish infection; prior course is not a new start.
+med$mar_action_group[med$hospitalization_id=="9"]<-"not_administered"
+med<-bind_rows(med,tibble(hospitalization_id="7",admin_dttm=safe_ts("2019-12-31 13:00:00"),med_category="ceftriaxone",med_group="cms_sepsis_qualifying_antibiotics",med_route_category="iv",med_dose=1,mar_action_group="administered"))
+# Move case 7 culture to day 4, putting its course start outside +/-2 days.
+micro$collect_dttm[micro$hospitalization_id=="7"]<-safe_ts("2020-01-04 01:00:00")
+med<-filter(med,hospitalization_id!="8"|admin_dttm<=safe_ts("2020-01-03 13:00:00"))
+labs<-tidyr::crossing(hospitalization_id=c("4","6","7","9"),day=1:2) %>% mutate(lab_category="creatinine",lab_value=as.character(day),lab_value_numeric=as.numeric(day),lab_result_dttm=safe_ts("2020-01-01 14:00:00")+days(day-1),lab_order_dttm=lab_result_dttm) %>% select(-day)
+labs<-bind_rows(labs,tibble(hospitalization_id="3",lab_category="lactate",lab_value="3",lab_value_numeric=3,lab_result_dttm=safe_ts("2020-01-02 14:00:00"),lab_order_dttm=safe_ts("2020-01-02 14:00:00")))
+vaso<-tibble(hospitalization_id=c("5","8"),admin_dttm=safe_ts(c("2020-01-04 23:00:00","2020-01-02 01:00:00")),med_category="norepinephrine",med_group="vasoactives",med_dose=1,mar_action_group="administered")
+adt<-tibble(hospitalization_id=ids,in_dttm=h$admission_dttm,out_dttm=h$discharge_dttm,location_category="icu")
+raw<-list(hospitalization=h,patient=tibble(patient_id=ids,death_dttm=as.POSIXct(rep(NA_real_,10),origin="1970-01-01",tz="UTC")),microbiology_culture=micro,medication_admin_intermittent=med,medication_admin_continuous=vaso,adt=adt,labs=labs,respiratory_support=tibble(hospitalization_id=character(),recorded_dttm=as.POSIXct(character(),tz="UTC"),device_category=character()),hospital_diagnosis=tibble(hospitalization_id="6",diagnosis_code="N18.6"))
+con<-ase_connect(tempfile("ase_fixture_"));DBI::dbWriteTable(con,"cohort_ids",data.frame(hospitalization_id=ids))
+for(n in names(raw))DBI::dbWriteTable(con,paste0("raw_",n),raw[[n]])
+ase_standardize_sources(con);r<-compute_ase_hospitalizations(con)
+c<-r$classification;group<-setNames(c$ase_group,c$hospitalization_id)
+check(group['1']=="Non-ASE","no blood culture remains non-ASE")
+check(group['2']=="Non-ASE","presumed infection without dysfunction remains non-ASE")
+check(group['3']=="Non-ASE" && c$ase_with_lactate[c$hospitalization_id=='3'],"lactate-only dysfunction is excluded from primary ASE")
+check(group['4']=="ASE","admission-day antibiotics count and doubling creatinine qualifies")
+check(group['5']=="ASE","vasopressor on +2 calendar day qualifies even beyond 48 hours")
+check(group['6']=="Non-ASE","ESRD excludes renal criterion")
+check(group['7']=="Non-ASE","ongoing antibiotics outside new-start window do not qualify")
+check(group['8']=="ASE","early death allows shorter qualifying antimicrobial course")
+check(group['9']=="Non-ASE","held medications cannot establish presumed infection")
+check(!'10' %in% names(group),"children are excluded rather than mislabeled non-ASE")
+check(c$presumed_infection[c$hospitalization_id=='2'],"blood culture result is not required for presumed infection")
+DBI::dbDisconnect(con,shutdown=TRUE)
+source("utils/preflight.R")
+for(ext in c("csv","parquet","fst")) {
+  dir<-tempfile(paste0("ase_",ext,"_"));dir.create(dir)
+  paths<-setNames(file.path(dir,paste0(names(raw),".",ext)),names(raw))
+  for(n in names(raw)) {
+    if(ext=="csv")readr::write_csv(raw[[n]],paths[[n]])
+    else if(ext=="parquet")arrow::write_parquet(raw[[n]],paths[[n]])
+    else fst::write_fst(as.data.frame(raw[[n]]),paths[[n]])
+  }
+  c2<-ase_connect(file.path(dir,"tmp"))
+  ase_register_sources(c2,paths,ids);ase_standardize_sources(c2)
+  roundtrip<-compute_ase_hospitalizations(c2)$classification
+  check(identical(group[sort(names(group))],setNames(roundtrip$ase_group,roundtrip$hospitalization_id)[sort(names(group))]),paste(ext,"source reader preserves clinical classification"))
+  DBI::dbDisconnect(c2,shutdown=TRUE)
+}
+# Population denominators retain uncultured stays and carry-in ICU days.
+h2<-tibble(hospitalization_id=c("A","N","U","C"),patient_id=c("A","N","U","C"),admission_dttm=safe_ts("2019-12-20"),discharge_dttm=safe_ts("2020-03-01"))
+a2<-tibble(hospitalization_id=h2$hospitalization_id,in_dttm=safe_ts(c("2020-01-01","2020-01-01","2020-01-01","2019-12-31")),out_dttm=safe_ts("2020-01-03"),location_category="icu")
+m2<-tibble(patient_id="A",hospitalization_id="A",collect_dttm=safe_ts("2020-01-02"),method_category="culture",fluid_category="blood_buffy",organism_category="escherichia_coli",organism_group="escherichia",organism_name="escherichia coli")
+d<-build_culture_data(h2,a2,m2,safe_ts("2020-01-01"),safe_ts("2020-03-01"))
+z<-build_ase_group_aggregates(d,tibble(hospitalization_id=h2$hospitalization_id,ase_group=c("ASE","Non-ASE","Non-ASE","Non-ASE")),safe_ts(c("2020-01-01","2020-02-01")))
+check(sum(z$monthly$n_icu_days)==sum(d$icu_admissions$icu_los_days),"subgroup ICU-days reconcile to cohort")
+check(sum(z$monthly$n_icu_admissions)==3,"carry-in ICU stay contributes days but not a new admission")
+check(z$monthly$n_icu_days[z$monthly$ase_group=='Non-ASE' & month(z$monthly$calendar_month)==1]==6,"uncultured non-ASE stays contribute exposure")
+check(sum(z$monthly$n_culture_events)==1,"culture events reconcile across groups")
+check(z$timing$percent_with_icu_culture[z$timing$ase_group=='Non-ASE']==0,"uncultured admissions retained in culture proportion")
+check(sum(z$organisms$n_detection_events)==1,"organism detections are deduplicated and reconcile")
+check(all(is.na(z$monthly$culture_events_per_100_icu_days[month(z$monthly$calendar_month)==2])),"zero exposure remains unavailable, not a zero rate")
+cat("ASE tests completed.\n")

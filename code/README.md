@@ -50,3 +50,7 @@ The synthetic tests exercise stay/event boundaries, carry-in denominators, missi
 `11_pool_site_trends.R` is a separate central workflow using completed aggregate runs and `config/pooling_sites.csv`; it is not invoked by the site runner. See `docs/pooling.md`.
 
 Dependency setup uses the committed `.Rprofile` and `renv/activate.R` bootstrap (renv 1.1.5). Restore with `Rscript -e 'renv::restore(prompt = FALSE)'` from the repository root. The site runner checks dependencies and table schemas before analysis, and writes aggregate date availability to `provenance/preflight_source_availability.csv` in the completed run.
+
+## ASE and non-ASE hospitalization subgroups
+
+The pipeline also runs `code/11_ase_stratified_analysis.R`, using full hospitalization clinical data to classify adult hospitalizations as ASE or Non-ASE. Each group has its own ICU admission/day denominators, including uncultured stays, with additional culture, organism, timing, optional susceptibility outputs, and an exported side-by-side hospitalization characteristics table (demographics, length of stay, recorded organ support, discharge outcomes and culture measures, with denominators and missingness). Missing required ASE inputs skip this additional analysis explicitly. Restore the updated `renv.lock` before running; DuckDB/DBI are included and no Python setup or additional site configuration is needed. See [ASE analysis definitions](../docs/ase_analysis.md).

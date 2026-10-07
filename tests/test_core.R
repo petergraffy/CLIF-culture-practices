@@ -115,3 +115,15 @@ test_that("missing-ID fallback isolates with different source labels remain sepa
  x<-build_susceptibility_analysis(rows,ast,buddy_den)$monthly %>% filter(calendar_month==buddy_months[1],specimen_stratum=="Overall")
  expect_equal(x$n_culture_isolates,3L);expect_equal(x$testing_fraction,1/3)
 })
+
+test_that("outer optimizer failure cannot be labeled estimated despite inner convergence", {
+  old_gam<-mgcv::gam
+  testthat::local_mocked_bindings(gam=function(...) {
+    fit<-old_gam(...);fit$converged<-TRUE;fit$outer.info$conv<-"iteration limit reached";fit
+  },.package="mgcv")
+  d<-tibble(calendar_month=seq(as.POSIXct("2018-01-01",tz="UTC"),by="month",length.out=36),n_detection_events=rep(c(8,12,15,10),9),n_icu_days=100)
+  fit<-fit_temporal_model(d,"n_icu_days")
+  expect_equal(fit$summary$model_status,"not_converged")
+  expect_match(fit$summary$model_warning,"iteration limit")
+  expect_true(is.na(fit$summary$annual_irr));expect_equal(nrow(fit$predictions),0L)
+})

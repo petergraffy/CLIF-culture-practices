@@ -43,3 +43,7 @@ Use `Rscript code/00_run_pipeline.R` for isolated run directories and manifests.
 Copy `pooling_sites_template.csv` to the ignored local `pooling_sites.csv` to register reviewed aggregate runs for central pooling. Specify validated observation dates and culture/AST QC eligibility per site. See `docs/pooling.md`; do not declare unresolved mappings validated.
 
 Dependency setup uses the committed `.Rprofile` and `renv/activate.R` bootstrap (renv 1.1.5). Restore with `Rscript -e 'renv::restore(prompt = FALSE)'` from the repository root. The site runner checks dependencies and table schemas before analysis, and writes aggregate date availability to `provenance/preflight_source_availability.csv` in the completed run.
+
+## ASE and non-ASE hospitalization subgroups
+
+The pipeline also runs `code/11_ase_stratified_analysis.R`, using full hospitalization clinical data to classify adult hospitalizations as ASE or Non-ASE. Each group has its own ICU admission/day denominators, including uncultured stays, with additional culture, organism, timing, and optional susceptibility outputs. Missing required ASE inputs skip this additional analysis explicitly. Restore the updated `renv.lock` before running; DuckDB/DBI are included and no Python setup or additional site configuration is needed. See [ASE analysis definitions](../docs/ase_analysis.md).

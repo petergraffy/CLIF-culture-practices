@@ -1,0 +1,8 @@
+{
+  "repository": "Common-Longitudinal-ICU-data-Format/clifpy",
+  "path": "clifpy/utils/ase.py",
+  "commit": "12e16ba9891ea6512fd464859565fdc3ed5ed8da",
+  "source_sha256": "c2a4a7369a14654008b683d6c1b218baf207c4887ff0acab876153b3d5b128ec",
+  "license": "Apache-2.0",
+  "primary_include_lactate": false
+}

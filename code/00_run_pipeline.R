@@ -11,8 +11,8 @@ source("utils/clif_io.R")
 preflight <- run_site_preflight()
 manifest_dir <- project_output_dir("provenance")
 readr::write_csv(preflight$summary,file.path(manifest_dir,"preflight_source_availability.csv"))
-scripts <- c("01_identify_icu_culture_cohort.R", "10_quality_checks.R", "02_plot_culture_time_series.R", "04_plot_positive_organisms.R", "05_culture_rates_per_icu_admission.R", "06_icu_day_denominators_and_timing.R", "08_organism_trends.R", "09_susceptibility_trends.R", "07_prepare_site_exports.R")
-files <- c(".Rprofile", "renv/activate.R", "renv/settings.json", list.files("code", full.names = TRUE, pattern = "[.]R$"), list.files("utils", full.names = TRUE, pattern = "[.]R$"), list.files("config", full.names = TRUE, pattern = "[.]csv$"), list.files("config/mcide", full.names = TRUE), if (file.exists("renv.lock")) "renv.lock" else character())
+scripts <- c("01_identify_icu_culture_cohort.R", "10_quality_checks.R", "02_plot_culture_time_series.R", "04_plot_positive_organisms.R", "05_culture_rates_per_icu_admission.R", "06_icu_day_denominators_and_timing.R", "08_organism_trends.R", "09_susceptibility_trends.R", "11_ase_stratified_analysis.R", "07_prepare_site_exports.R")
+files <- c(".Rprofile", "renv/activate.R", "renv/settings.json", list.files("code", full.names = TRUE, pattern = "[.]R$"), list.files("utils", full.names = TRUE, recursive = TRUE, pattern = "[.](R|sql|json|txt)$"), list.files("config", full.names = TRUE, pattern = "[.]csv$"), list.files("config/mcide", full.names = TRUE), if (file.exists("renv.lock")) "renv.lock" else character())
 config_path <- Sys.getenv("CLIF_CONFIG_PATH", "config/config.json")
 manifest <- list(run_id = run_id, site_name = clif_site_name, started_utc = format(Sys.time(), tz = "UTC", usetz = TRUE), config_md5 = unname(tools::md5sum(config_path)), study_start_date = study_settings$study_start_date, study_end_date = study_settings$study_end_date, code_and_mapping_md5 = as.list(tools::md5sum(files)), R_version = R.version.string, packages = as.list(setNames(vapply(c("dplyr", "tidyr", "readr", "lubridate", "mgcv", "ggplot2"), function(p) as.character(packageVersion(p)), character(1)), c("dplyr", "tidyr", "readr", "lubridate", "mgcv", "ggplot2"))), environment_overrides = as.list(Sys.getenv()[grepl("^(CLIF_|STUDY_|PLOT_|TOP_N_|AST_|TIMING_|WRITE_ROW_)", names(Sys.getenv()))]), analysis_status = "running")
 # Exact paths and environment values stay private.
@@ -25,7 +25,8 @@ for (file in files) {
   if (!file.copy(file, snapshot_path, overwrite = FALSE)) stop("Could not snapshot analysis source: ", file)
 }
 file.copy(config_path, file.path(dirname(private_manifest), "config_used.json"))
-input_files <- vapply(c("hospitalization", "adt", "microbiology_culture"), find_table_path, character(1))
+input_files <- vapply(c("hospitalization", "adt", "microbiology_culture", "patient", "labs", "medication_admin_intermittent", "medication_admin_continuous", "respiratory_support", "hospital_diagnosis"), find_table_path, character(1), required = FALSE)
+input_files <- input_files[!is.na(input_files)]
 optional <- find_table_path("microbiology_susceptibility", required = FALSE)
 if (!is.na(optional)) input_files <- c(input_files, microbiology_susceptibility = optional)
 readr::write_csv(data.frame(table = names(input_files), file_basename = basename(input_files), size_bytes = file.info(input_files)$size, modified_utc = format(file.info(input_files)$mtime, tz = "UTC", usetz = TRUE)), file.path(manifest_dir, "input_file_metadata.csv"))

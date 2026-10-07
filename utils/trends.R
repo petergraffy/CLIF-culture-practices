@@ -16,13 +16,26 @@ fit_temporal_model <- function(data, denominator_var, count_var = "n_detection_e
   warnings <- character()
   fit <- tryCatch(withCallingHandlers(mgcv::gam(formula, family = if (proportion) quasibinomial() else mgcv::nb(), method = "REML", data = dat), warning = function(w) {warnings <<- c(warnings, conditionMessage(w)); invokeRestart("muffleWarning")}), error = function(e) e)
   if (inherits(fit, "error")) return(empty(paste0("failed: ", conditionMessage(fit))))
-  if (!isTRUE(fit$converged)) return(empty("not_converged"))
+  # mgcv can set the inner convergence flag even when outer optimization fails.
+  outer_failed <- !is.null(fit$outer.info$conv) && !identical(fit$outer.info$conv, "full convergence")
+  convergence_warning <- any(grepl("iteration limit|without full convergence|failed to converge|not converged|step failure", warnings, ignore.case = TRUE))
+  if (!isTRUE(fit$converged) || outer_failed || convergence_warning) {
+    rejected <- empty("not_converged")
+    rejected$summary$model_warning <- if(length(warnings)) paste(unique(warnings),collapse="; ") else if(outer_failed) as.character(fit$outer.info$conv) else NA_character_
+    return(rejected)
+  }
   years <- max(dat$time_years) - min(dat$time_years)
   # Standardize both endpoints to the same seasonal setting. Offsets cancel.
   endpoints <- dat[c(1, nrow(dat)), ]; endpoints$season_sin <- 0; endpoints$season_cos <- 0; endpoints$log_denominator <- 0
   xp <- predict(fit, endpoints, type = "lpmatrix")
   contrast <- (xp[2, ] - xp[1, ]) / years
   beta <- sum(contrast * coef(fit)); se <- sqrt(as.numeric(contrast %*% vcov(fit, unconditional = TRUE) %*% contrast))
+  effects <- exp(c(beta,beta-1.96*se,beta+1.96*se))
+  if (!is.finite(beta) || !is.finite(se) || se<=0 || any(!is.finite(effects) | effects<=0)) {
+    rejected <- empty("invalid_endpoint_uncertainty")
+    rejected$summary$model_warning <- "Endpoint effect or uncertainty is non-finite or underflows; excluded from inference."
+    return(rejected)
+  }
   month_number <- lubridate::year(dat$calendar_month) * 12 + lubridate::month(dat$calendar_month)
   adjacent <- which(diff(month_number) == 1)
   residual <- as.numeric(residuals(fit, type = "pearson"))

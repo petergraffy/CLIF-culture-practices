@@ -156,3 +156,7 @@ Do not commit PHI, row-level CLIF extracts, credentials, or institution-specific
 After sites generate completed aggregate runs, use `Rscript code/11_pool_site_trends.R config/pooling_sites.csv`. This refits site models over common validated months, pools endpoint changes with random-effects meta-analysis, and fits secondary joint season-adjusted curves. See [pooling definitions and registry setup](docs/pooling.md). No cross-site estimates are produced by the single-site runner.
 
 Before multisite testing, follow the [buddy-testing guide](docs/buddy_testing.md), including source linkage/coverage reconciliation at a site with real AST.
+
+## ASE and non-ASE hospitalization subgroups
+
+The pipeline also runs `code/11_ase_stratified_analysis.R`, using full hospitalization clinical data to classify adult hospitalizations as ASE or Non-ASE. Each group has its own ICU admission/day denominators, including uncultured stays, with additional culture, organism, timing, optional susceptibility outputs, and an exported side-by-side hospitalization characteristics table (demographics, length of stay, recorded organ support, discharge outcomes and culture measures, with denominators and missingness). Missing required ASE inputs skip this additional analysis explicitly. Restore the updated `renv.lock` before running; DuckDB/DBI are included and no Python setup or additional site configuration is needed. See [ASE analysis definitions](docs/ase_analysis.md).
