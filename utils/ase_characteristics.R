@@ -41,7 +41,7 @@ build_ase_characteristics <- function(data, classification, patient, clinical=NU
     recorded_vasopressor="Recorded nonprocedural vasopressor during hospitalization",
     any_icu_culture="Any ICU culture in study window", any_positive_icu_culture="Any positive ICU culture in study window")
   rows <- list()
-  for (g in c("ASE","Non-ASE")) {
+  for (g in ase_group_levels) {
     x <- filter(h, ase_group==g); total <- nrow(x)
     add <- function(field,label,level,type,n,observed,missing,percent=NA_real_,median=NA_real_,p25=NA_real_,p75=NA_real_,display=NA_character_) {
       rows[[length(rows)+1L]] <<- tibble(ase_group=g, characteristic=field, label=label, level=level,
@@ -71,7 +71,7 @@ build_ase_characteristics <- function(data, classification, patient, clinical=NU
   wide <- long %>% select(characteristic,label,level,summary_type,ase_group,display,n_observed,n_missing,availability) %>%
     tidyr::pivot_wider(names_from=ase_group,values_from=c(display,n_observed,n_missing,availability))
   overlap <- h %>% distinct(patient_id,ase_group) %>% count(patient_id) %>% summarise(n=sum(n>1))
-  qc <- tibble(metric=c("classified_hospitalizations","unique_patients_overall","patients_in_both_subgroups"),
+  qc <- tibble(metric=c("classified_hospitalizations","unique_patients_overall","patients_in_multiple_subgroups"),
     n=c(nrow(h),n_distinct(h$patient_id),overlap$n))
   list(long=long,wide=wide,qc=qc)
 }

@@ -1,0 +1,40 @@
+suppressPackageStartupMessages({library(dplyr);library(tidyr);library(lubridate)})
+source("utils/culture_core.R");source("utils/ase.R");source("utils/ase_clinical.R")
+t0<-safe_ts("2020-01-01")
+# Earliest dysfunction vs blood-culture anchor; before, within, between, and after ICU stays.
+eps<-tibble(hospitalization_id=as.character(1:6),bc_id=1L,ase_without_lactate=TRUE,blood_culture_dttm=t0+3600*c(2,24,49,120,240,190),vasopressor_dttm=t0+3600*c(-1,24,48,120,240,180),imv_dttm=as.POSIXct(NA,tz="UTC"),aki_dttm=as.POSIXct(NA,tz="UTC"),hyperbilirubinemia_dttm=as.POSIXct(NA,tz="UTC"),thrombocytopenia_dttm=as.POSIXct(NA,tz="UTC"))
+eps<-bind_rows(eps,mutate(eps[2,],bc_id=2L,blood_culture_dttm=t0+3600*30,vasopressor_dttm=t0+3600*26))
+full<-tibble(hospitalization_id=as.character(c(1:6,4)),icu_in_dttm=t0+3600*c(0,0,0,0,0,0,144),icu_out_dttm=t0+3600*c(72,72,72,72,72,240,200))
+class<-tibble(hospitalization_id=as.character(1:6),ase_group="ASE")
+x<-build_ase_event_timing(eps,class,full,t0,t0+3600*220)
+y<-filter(x$private,timing_anchor=="Earliest qualifying organ dysfunction")
+stopifnot(nrow(y)==6,y$event_location[y$hospitalization_id=="1"]=="Before first ICU admission",y$event_location[y$hospitalization_id=="3"]=="During ICU stay: 48 hours to 7 days",y$event_location[y$hospitalization_id=="4"]=="Between ICU stays",y$event_location[y$hospitalization_id=="5"]=="After last ICU exit",y$event_location[y$hospitalization_id=="6"]=="During ICU stay: after 7 days")
+stopifnot(all(x$summary$n_ase_hospitalizations==6),y$hours_into_matched_icu_stay[y$hospitalization_id=="2"]==24)
+# Repeat collections at same timestamp collapse; fixed index windows and result availability.
+stay<-tibble(hospitalization_id="h",patient_id="p",icu_admission_id=1L,ase_group=ase_group_levels[1],icu_in_dttm=t0,icu_out_dttm=t0+200*3600,icu_in_dttm_clipped=t0,icu_out_dttm_clipped=t0+200*3600,icu_los_days=200/24,icu_admission_month=t0)
+rows<-tibble(hospitalization_id="h",icu_admission_id=1L,ase_group=ase_group_levels[1],icu_in_dttm=t0,culture_event_id=1:7,fluid_category="blood_buffy",collect_dttm=t0+3600*c(0,24,48,72,73,74,74),result_dttm=t0+3600*c(30,30,50,74,75,76,76),result_status=c("Negative/no growth",rep("Positive",6)),positive_culture=c(FALSE,rep(TRUE,6)),organism_category=c("no_growth","escherichia_coli","escherichia_coli","klebsiella_pneumoniae","escherichia_coli","escherichia_coli","escherichia_coli"))
+z<-list(stays=stay,rows=rows,events=rows %>% mutate(any_positive_culture=positive_culture))
+r<-build_repeat_culture_yield(z)
+stopifnot(r$qc$n_distinct_collection_timestamps==6,r$qc$n_collection_episodes==2,r$qc$n_repeat_collections==4,sum(r$summary$n_repeat_collections[r$summary$window_hours==24])==2,!r$private$index_results_recorded_by_repeat[r$private$hours_since_index==24])
+stopifnot(sum(r$private$incremental_yield=="New organism not seen in prior episode collections")==2,
+  sum(r$private$incremental_yield=="Previously detected organism only")==2,
+  r$private$repeat_yield[r$private$hours_since_index==48]=="New organism relative to index",
+  r$private$incremental_yield[r$private$hours_since_index==48]=="Previously detected organism only")
+phase<-build_icu_phase_analysis(z,t0)
+stopifnot(abs(sum(phase$denominators$n_icu_days)-200/24)<1e-10,sum(phase$cultures$n_culture_events)==7,phase$cultures$n_culture_events[phase$cultures$ase_group==ase_group_levels[1] & phase$cultures$icu_phase=="First 48 ICU hours"]==2)
+stopifnot(phase$organisms$n_first_detection_icu_admissions[phase$organisms$ase_group==ase_group_levels[1] & phase$organisms$icu_phase=="After 48 ICU hours" & phase$organisms$organism_category=="escherichia_coli"]==0)
+# Empty ASE or repeat population still produces valid typed aggregate outputs.
+none<-build_ase_event_timing(eps[0,],class[0,],full,t0,t0+3600*220);stopifnot(nrow(none$summary)==0)
+empty<-z;empty$rows<-rows[0,];stopifnot(nrow(build_repeat_culture_yield(empty)$summary)==0)
+cat("Clinical extensions passed: first ASE anchors, exact 48-hour boundary, non-ICU events, repeated anchors, repeat episodes and phase exposure denominators.\n")
+
+con<-ase_connect(tempfile("clinical_dose_test_"))
+DBI::dbWriteTable(con,"hospitalizations",tibble(hospitalization_id=c("h","none"),admission_dttm=t0,discharge_dttm=t0+200*3600))
+DBI::dbWriteTable(con,"antibiotics",tibble(hospitalization_id="h",admin_dttm=t0+3600*c(2,4,40,80,140),med_category=c("ceftriaxone","ceftriaxone","ceftriaxone","cefepime","ceftriaxone"),is_iv_im=1L))
+ev<-tibble(culture_event_id=1:6,hospitalization_id=c(rep("h",5),"none"),collect_dttm=t0+3600*c(0,2,2+0.5/3600,60,80,3),ase_group=ase_group_levels[1],fluid_category="blood_buffy",any_positive_culture=FALSE)
+a<-build_culture_antibiotic_timing(con,ev)
+stopifnot(a$private$antibiotic_relation[1]=="Before first dose",a$private$antibiotic_relation[2]=="Same recorded timestamp",a$private$antibiotic_relation[3]=="After first dose",a$private$antibiotic_relation[6]=="No recorded qualifying parenteral dose")
+stopifnot(a$private$recent_exposure[4]=="Ongoing drug course started more than 48 hours earlier",a$private$recent_exposure[5]=="New drug course started within prior 48 hours")
+stopifnot(sum(a$relative$n_culture_events)==6)
+DBI::dbDisconnect(con,shutdown=TRUE)
+cat("Antibiotic timing passed: before/same/after/no dose, new drug courses versus ongoing treatment.\n")

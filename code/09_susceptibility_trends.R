@@ -47,7 +47,7 @@ run_susceptibility <- function() {
   for(outcome in c("susceptible_detection_rate","non_susceptible_detection_rate","non_susceptible_fraction")) {
     fraction<-outcome=="non_susceptible_fraction"
     observed<-points %>% mutate(observed_value=if(fraction)non_susceptible_fraction else if(outcome=="susceptible_detection_rate")susceptible_per_100_icu_days else non_susceptible_per_100_icu_days,model_eligible=if(fraction)fraction_model_eligible else rate_model_eligible)
-    p<-ggplot(observed,aes(calendar_month,observed_value))+geom_point(aes(shape=model_eligible),alpha=0.6,na.rm=TRUE)+facet_wrap(~pair,scales=if(fraction)"fixed" else "free_y",ncol=3)+labs(x=NULL,y=if(fraction)"Non-susceptible fraction among interpretable tests" else paste(if(outcome=="susceptible_detection_rate")"Susceptible" else "Non-susceptible","detections per 100 ICU days"),shape="Model eligible",caption="Points: observed values. Line and ribbon: season-adjusted long-term mean and pointwise 95% CI.\nValidated zero-detection months retained; unavailable testing remains unknown. See coverage figure.")+theme_bw()+theme(legend.position="bottom")
+    p<-ggplot(observed,aes(calendar_month,observed_value))+geom_point(aes(shape=model_eligible),alpha=0.6,na.rm=TRUE)+facet_wrap(~pair,scales=if(fraction)"fixed" else "free_y",ncol=3)+labs(x=NULL,y=if(fraction)"Non-susceptible fraction among interpretable tests" else paste(if(outcome=="susceptible_detection_rate")"Susceptible" else "Non-susceptible","detections per 100 ICU days"),shape="Model eligible",caption=NULL)+theme_bw()+theme(legend.position="bottom")
     if(fraction)p<-p+scale_y_continuous(limits=c(0,1),labels=scales::percent)
     if(nrow(curves)) {
       fit_data<-curves %>% filter(specimen_stratum=="Overall",.data$outcome==.env$outcome) %>% semi_join(top_pairs,by=c("organism_category","antimicrobial_category")) %>% mutate(pair=gsub("_"," ",paste(organism_category,antimicrobial_category,sep=" / ")))
@@ -56,7 +56,7 @@ run_susceptibility <- function() {
     ggsave(file.path(out_dir,glue("{outcome}_{clif_site_name}_{stamp}.png")),p,width=14,height=10,dpi=200)
   }
   coverage<-points %>% pivot_longer(c(linkage_fraction,testing_fraction,testing_fraction_linkable),names_to="metric",values_to="fraction")
-  p<-ggplot(coverage,aes(calendar_month,fraction,color=metric))+geom_point(na.rm=TRUE)+facet_wrap(~pair,ncol=3)+geom_hline(yintercept=coverage_min,linetype=2,color="grey50")+geom_hline(yintercept=linkage_min,linetype=3,color="grey50")+scale_y_continuous(limits=c(0,1),labels=scales::percent)+labs(x=NULL,y="Isolate linkage / interpretable testing coverage",color=NULL,caption=glue("Testing uses all observed positive isolates; linkable-only coverage shown for comparison.\nDashed: minimum testing {coverage_min}; dotted: minimum linkage {linkage_min}. Missing values are undefined, not zero."))+theme_bw()+theme(legend.position="bottom")
+  p<-ggplot(coverage,aes(calendar_month,fraction,color=metric))+geom_point(na.rm=TRUE)+facet_wrap(~pair,ncol=3)+geom_hline(yintercept=coverage_min,linetype=2,color="grey50")+geom_hline(yintercept=linkage_min,linetype=3,color="grey50")+scale_y_continuous(limits=c(0,1),labels=scales::percent)+labs(x=NULL,y="Isolate linkage / interpretable testing coverage",color=NULL,caption=NULL)+theme_bw()+theme(legend.position="bottom")
   ggsave(file.path(out_dir,glue("susceptibility_testing_coverage_{clif_site_name}_{stamp}.png")),p,width=14,height=10,dpi=200)
 }
 tryCatch(run_susceptibility(),error=function(e){write_availability("failed");stop(e)})

@@ -47,6 +47,6 @@ Before pooling, register only completed runs with matching code/mCIDE hashes and
 
 Dependency setup uses the committed `.Rprofile` and `renv/activate.R` bootstrap (renv 1.1.5). Restore with `Rscript -e 'renv::restore(prompt = FALSE)'` from the repository root. The site runner checks dependencies and table schemas before analysis, and writes aggregate date availability to `provenance/preflight_source_availability.csv` in the completed run.
 
-## ASE and non-ASE hospitalization subgroups
+## Infection and ASE hospitalization subgroups
 
-The pipeline also runs `code/11_ase_stratified_analysis.R`, using full hospitalization clinical data to classify adult hospitalizations as ASE or Non-ASE. Each group has its own ICU admission/day denominators, including uncultured stays, with additional culture, organism, timing, and optional susceptibility outputs. Missing required ASE inputs skip this additional analysis explicitly. Restore the updated `renv.lock` before running; DuckDB/DBI are included and no Python setup or additional site configuration is needed. See [ASE analysis definitions](ase_analysis.md).
+The pipeline also runs `code/11_ase_stratified_analysis.R`, using full hospitalization clinical data to classify adult hospitalizations into three mutually exclusive groups: No presumed infection, Presumed infection without ASE, and ASE. Each group has its own ICU admission/day denominators, including uncultured stays, with additional culture, organism, timing, and optional susceptibility outputs. Missing required ASE inputs skip this additional analysis explicitly. Restore the updated `renv.lock` before running; DuckDB/DBI are included and no Python setup or additional site configuration is needed. See [ASE analysis definitions](ase_analysis.md).

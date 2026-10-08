@@ -1,0 +1,38 @@
+# Optional preview from a completed run; run: Rscript code/12_preview_ase_onset.R RUN_ID
+suppressPackageStartupMessages({library(dplyr);library(tidyr);library(readr);library(lubridate);library(ggplot2)})
+source("utils/clif_io.R");source("utils/ase.R");source("utils/ase_onset_preview.R")
+args<-commandArgs(trailingOnly=TRUE);if(length(args)!=1)stop("Supply the completed parent run ID")
+parent<-args[[1]];private<-project_path("data","intermediate","runs",parent,"ase")
+anchor_file<-file.path(private,"ase_first_event_timing.csv");episode_file<-file.path(private,"ase_blood_culture_criteria.csv")
+a<-read_clif_csv(anchor_file,show_col_types=FALSE) %>% mutate(across(c(event_time,first_icu_in,icu_in_dttm),safe_ts))
+ep<-read_clif_csv(episode_file,show_col_types=FALSE) %>% filter(ase_without_lactate)
+fields<-c("vasopressor_dttm","imv_dttm","aki_dttm","hyperbilirubinemia_dttm","thrombocytopenia_dttm")
+for(f in c(fields,"blood_culture_dttm"))ep[[f]]<-safe_ts(ep[[f]])
+ep$proxy<-as.POSIXct(do.call(pmin,c(lapply(ep[fields],as.numeric),list(na.rm=TRUE))),origin="1970-01-01",tz="UTC")
+defining<-ep %>% arrange(proxy,blood_culture_dttm,bc_id) %>% group_by(hospitalization_id) %>% slice_head(n=1) %>% ungroup() %>% transmute(hospitalization_id,collect_dttm=blood_culture_dttm)
+con<-ase_connect(file.path(private,"preview_duckdb_tmp"))
+DBI::dbWriteTable(con,"cohort_ids",data.frame(hospitalization_id=unique(a$hospitalization_id)))
+read_scoped<-function(tbl) {
+ path<-find_table_path(tbl);if(tolower(tools::file_ext(path))!="parquet")stop("This optional preview currently requires parquet source tables")
+ q<-paste0("SELECT t.* FROM read_parquet(",DBI::dbQuoteString(con,path),") t JOIN cohort_ids c ON CAST(t.hospitalization_id AS VARCHAR)=c.hospitalization_id")
+ x<-janitor::clean_names(DBI::dbGetQuery(con,q));x$hospitalization_id<-as.character(x$hospitalization_id);if("patient_id" %in% names(x))x$patient_id<-as.character(x$patient_id);x
+}
+h<-read_scoped("hospitalization") %>% mutate(across(c(admission_dttm,discharge_dttm),safe_ts))
+m<-read_scoped("microbiology_culture")
+DBI::dbDisconnect(con,shutdown=TRUE)
+start<-safe_ts(study_settings$study_start_date);end<-safe_ts(study_settings$study_end_date)+days(1)
+# A hospitalization interval provides the same culture collapsing rules outside the ICU too.
+hospital_intervals<-h %>% transmute(hospitalization_id,in_dttm=admission_dttm,out_dttm=discharge_dttm,location_category="icu")
+overrides<-read_csv(project_path("config","specimen_category_overrides.csv"),show_col_types=FALSE)
+data<-build_culture_data(h,hospital_intervals,m,start,end,overrides)
+x<-build_ase_onset_preview(data$events,a,h,defining,start,end)
+out<-project_path("output","review_figures",parent,"ase_onset_preview_1h");dir.create(out,recursive=TRUE,showWarnings=FALSE)
+for(name in names(x))write_csv(x[[name]],file.path(out,paste0("ase_onset_",name,"_",clif_site_name,".csv")))
+plot_ase_onset_preview(x,out,clif_site_name)
+# Reconcile full-period all-source counts with the sum of exact specimen categories.
+r<-x$results %>% group_by(onset_stratum,sensitivity,bin_start_hour,result_status) %>% summarise(all_count=sum(n_culture_events[specimen=="All cultures"]),source_count=sum(n_culture_events[specimen!="All cultures"]),.groups="drop")
+stopifnot(all(r$all_count==r$source_count),all(x$exposure$observed_patient_hours>=0),!anyNA(x$yield$n_positive),all(x$yield$n_positive<=x$yield$n_culture_events))
+jsonlite::write_json(list(parent_run=parent,analysis="retrospective first-ASE onset preview",anchor="earliest qualifying non-lactate organ dysfunction proxy",window_hours=c(-48,72),bin_hours=1,observation="hospitalization intersected with study dates; ICU and non-ICU time",sensitivity="exclude every blood event at the collection timestamp of the qualifying blood anchor associated with the earliest proxy",result_timing="eventual culture result assigned to collection time; not result availability",anchor_md5=unname(tools::md5sum(anchor_file)),episode_md5=unname(tools::md5sum(episode_file)),helper_md5=unname(tools::md5sum("utils/ase_onset_preview.R"))),file.path(out,"provenance.json"),pretty=TRUE,auto_unbox=TRUE)
+print(x$qc)
+print(x$yield %>% filter(specimen=="All cultures") %>% group_by(onset_stratum,sensitivity) %>% summarise(n_cultures=sum(n_culture_events),positive=sum(n_positive),.groups="drop"))
+cat("Preview exported; exact specimen totals and observation-hour checks passed.\n")

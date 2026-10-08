@@ -1,3 +1,6 @@
+# Mutually exclusive hospitalization groups; keep these labels consistent across exports.
+ase_group_levels <- c("No presumed infection", "Presumed infection without ASE", "ASE")
+
 # Hospitalization-level ASE classification, adapted from pinned clifpy SQL (Apache-2.0).
 # No Python runtime is required. Calendar windows use the project's UTC timestamps.
 ase_required_columns <- list(
@@ -71,7 +74,7 @@ ase_standardize_sources <- function(con) {
 
 compute_ase_hospitalizations <- function(con,sql_root="utils/ase/sql") {
   exec<-function(sql)DBI::dbExecute(con,sql)
-  # Only adults with complete hospitalization boundaries enter the two-group analysis.
+  # Only adults with complete hospitalization boundaries enter the three-group analysis.
   exec("CREATE TABLE hospitalizations AS SELECT h.* FROM src_hospitalization h JOIN cohort_ids c USING(hospitalization_id) WHERE h.age_at_admission>=18 AND h.admission_dttm IS NOT NULL AND h.discharge_dttm>h.admission_dttm")
   if(DBI::dbGetQuery(con,"SELECT count(*) n FROM hospitalizations")$n==0)return(list(classification=tibble::tibble(hospitalization_id=character(),ase_group=character(),presumed_infection=logical(),ase_without_lactate=logical(),ase_with_lactate=logical()),episodes=tibble::tibble()))
   if(DBI::dbGetQuery(con,"SELECT count(*) n FROM (SELECT hospitalization_id FROM hospitalizations GROUP BY hospitalization_id HAVING count(*)>1)")$n>0)stop("ASE: duplicate hospitalization IDs.")
@@ -101,18 +104,18 @@ compute_ase_hospitalizations <- function(con,sql_root="utils/ase/sql") {
   # not this binary any-event classification; no repeated events are counted here.
   flags<-episodes %>% dplyr::group_by(hospitalization_id) %>% dplyr::summarise(presumed_infection=any(presumed_infection==1),ase_without_lactate=any(ase_without_lactate),ase_with_lactate=any(ase_with_lactate),.groups="drop")
   hospitals<-DBI::dbGetQuery(con,"SELECT hospitalization_id FROM hospitalizations")
-  classification<-hospitals %>% dplyr::left_join(flags,by="hospitalization_id") %>% dplyr::mutate(dplyr::across(c(presumed_infection,ase_without_lactate,ase_with_lactate),~dplyr::coalesce(.x,FALSE)),ase_group=dplyr::if_else(ase_without_lactate,"ASE","Non-ASE"))
+  classification<-hospitals %>% dplyr::left_join(flags,by="hospitalization_id") %>% dplyr::mutate(dplyr::across(c(presumed_infection,ase_without_lactate,ase_with_lactate),~dplyr::coalesce(.x,FALSE)),ase_group=dplyr::case_when(ase_without_lactate~"ASE",presumed_infection~"Presumed infection without ASE",TRUE~"No presumed infection"))
   list(classification=classification,episodes=episodes)
 }
 
 build_ase_group_aggregates <- function(data,classification,months) {
   if(anyDuplicated(classification$hospitalization_id))stop("ASE: hospitalization classification is not unique.")
-  if(anyNA(classification$ase_group)||any(!classification$ase_group %in% c("ASE","Non-ASE")))stop("ASE: invalid classification; unknown must not be assigned non-ASE.")
+  if(anyNA(classification$ase_group)||any(!classification$ase_group %in% ase_group_levels))stop("ASE: invalid classification; unknown must not be assigned a subgroup.")
   keys<-dplyr::select(classification,hospitalization_id,ase_group)
   stays<-dplyr::inner_join(data$icu_admissions,keys,by="hospitalization_id")
   events<-dplyr::inner_join(data$events,keys,by="hospitalization_id") %>% dplyr::mutate(calendar_month=lubridate::floor_date(collect_dttm,"month"))
   rows<-dplyr::inner_join(data$rows,keys,by="hospitalization_id") %>% dplyr::mutate(calendar_month=lubridate::floor_date(collect_dttm,"month"))
-  den<-dplyr::bind_rows(lapply(c("ASE","Non-ASE"),function(g)dplyr::mutate(monthly_icu_denominators(dplyr::filter(stays,ase_group==g),months),ase_group=g)))
+  den<-dplyr::bind_rows(lapply(ase_group_levels,function(g)dplyr::mutate(monthly_icu_denominators(dplyr::filter(stays,ase_group==g),months),ase_group=g)))
   monthly<-events %>% dplyr::group_by(ase_group,calendar_month) %>% dplyr::summarise(n_culture_events=dplyr::n(),n_positive_culture_events=sum(any_positive_culture),.groups="drop")
   monthly<-den %>% dplyr::left_join(monthly,by=c("ase_group","calendar_month")) %>% dplyr::mutate(dplyr::across(c(n_culture_events,n_positive_culture_events),~dplyr::coalesce(.x,0L)),culture_events_per_100_icu_days=dplyr::if_else(n_icu_days>0,100*n_culture_events/n_icu_days,NA_real_),positive_events_per_100_icu_days=dplyr::if_else(n_icu_days>0,100*n_positive_culture_events/n_icu_days,NA_real_),culture_events_per_100_icu_admissions=dplyr::if_else(n_icu_admissions>0,100*n_culture_events/n_icu_admissions,NA_real_),positivity=dplyr::if_else(n_culture_events>0,n_positive_culture_events/n_culture_events,NA_real_))
   # Use pooled site source activity, so a subgroup with cultures=0 has a real zero

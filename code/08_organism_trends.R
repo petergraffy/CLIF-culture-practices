@@ -386,8 +386,7 @@ plot_trend_facets <- function(data, title, y_label, ncol = 3) {
       x = NULL,
       y = y_label,
       fill = "Taxonomy",
-      caption = "Bars: observed monthly rates. Line and shaded 95% CI: season-adjusted long-term mean."
-    ) +
+      caption = NULL) +
     theme_trends
 }
 
