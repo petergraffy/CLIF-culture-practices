@@ -58,8 +58,8 @@ ase_register_sources <- function(con,paths,hospitalization_ids) {
   }
 }
 
-ase_standardize_sources <- function(con) {
-  for(tbl in names(ase_required_columns)) {
+ase_standardize_sources <- function(con,tables=names(ase_required_columns)) {
+  for(tbl in tables) {
     columns<-ase_required_columns[[tbl]]
     expressions<-vapply(columns,function(col){
       z<-as.character(DBI::dbQuoteIdentifier(con,col))
